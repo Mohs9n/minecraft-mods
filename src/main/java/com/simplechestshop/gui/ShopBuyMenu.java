@@ -30,21 +30,22 @@ import java.util.List;
 import java.util.UUID;
 
 public class ShopBuyMenu extends ChestMenu {
-    public static final int PRODUCT_DISPLAY_SLOT = 11;
-    public static final int PRICE_DISPLAY_SLOT = 13;
-    public static final int BUY_BUTTON_SLOT = 15;
 
     private final Level level;
     private final BlockPos chestPos;
-    private final ShopTrade trade;
+    private final List<ShopTrade> trades;
     private final String ownerName;
     private final String ownerUuid;
 
-    public ShopBuyMenu(int containerId, Inventory playerInventory, Level level, BlockPos chestPos, ShopTrade trade, String ownerName, String ownerUuid) {
-        super(MenuType.GENERIC_9x3, containerId, playerInventory, new SimpleContainer(27), 3);
+    public ShopBuyMenu(int containerId, Inventory playerInventory, Level level, BlockPos chestPos, List<ShopTrade> trades, String ownerName, String ownerUuid) {
+        super(trades != null && trades.size() > 3 ? MenuType.GENERIC_9x6 : MenuType.GENERIC_9x3,
+                containerId,
+                playerInventory,
+                new SimpleContainer(trades != null && trades.size() > 3 ? 54 : 27),
+                trades != null && trades.size() > 3 ? 6 : 3);
         this.level = level;
         this.chestPos = chestPos;
-        this.trade = trade;
+        this.trades = (trades != null) ? trades : List.of();
         this.ownerName = ownerName;
         this.ownerUuid = ownerUuid;
 
@@ -52,108 +53,165 @@ public class ShopBuyMenu extends ChestMenu {
         updateGui(playerInventory.player);
     }
 
-    public static void open(ServerPlayer player, Level level, BlockPos pos, ShopTrade trade, String ownerName, String ownerUuid) {
+    public static void open(ServerPlayer player, Level level, BlockPos pos, List<ShopTrade> trades, String ownerName, String ownerUuid) {
         player.openMenu(new SimpleMenuProvider(
-                (containerId, playerInv, p) -> new ShopBuyMenu(containerId, playerInv, level, pos, trade, ownerName, ownerUuid),
+                (containerId, playerInv, p) -> new ShopBuyMenu(containerId, playerInv, level, pos, trades, ownerName, ownerUuid),
                 Component.literal("§6Chest Shop §8| §e" + (ownerName != null ? ownerName : "Shop"))
         ));
     }
 
+    public static void open(ServerPlayer player, Level level, BlockPos pos, ShopTrade trade, String ownerName, String ownerUuid) {
+        open(player, level, pos, trade != null ? List.of(trade) : List.of(), ownerName, ownerUuid);
+    }
+
     private void initBorders() {
         ItemStack border = ShopCreationMenu.createGuiItem(Items.STAINED_GLASS_PANE.gray(), Component.literal("§r"), null);
-        for (int i = 0; i < 27; i++) {
-            if (i != PRODUCT_DISPLAY_SLOT && i != PRICE_DISPLAY_SLOT && i != BUY_BUTTON_SLOT) {
-                getContainer().setItem(i, border);
-            }
+        for (int i = 0; i < getContainer().getContainerSize(); i++) {
+            getContainer().setItem(i, border.copy());
         }
     }
 
     public void updateGui(Player player) {
+        initBorders();
+
         Container chestContainer = ChestShopManager.getChestContainer(level, chestPos);
-        if (chestContainer == null) return;
-
-        int stock = ChestShopManager.getStockCount(chestContainer, trade);
-        Item actualSaleItem = ChestShopManager.getActualSaleItem(chestContainer, trade);
-        int buyerBalance = ChestShopManager.countPlayerItem(player, trade.getPriceItem());
-
-        // Slot 11: Product Display
-        if (actualSaleItem != null) {
-            ItemStack product = new ItemStack(actualSaleItem, Math.min(trade.getSaleCount(), actualSaleItem.getDefaultMaxStackSize()));
-            List<Component> lore = new ArrayList<>();
-            lore.add(Component.literal("§7§m------------------------"));
-            lore.add(Component.literal("§7Product: §f" + trade.getSaleCount() + "x " + ChestShopManager.getItemDisplayName(actualSaleItem)));
-            lore.add(Component.literal("§7Chest Stock: " + (stock >= trade.getSaleCount() ? "§a" + stock + " available" : "§cOut of Stock (" + stock + ")")));
-            lore.add(Component.literal("§7Shop Owner: §e" + (ownerName != null ? ownerName : "Unknown")));
-            lore.add(Component.literal("§7§m------------------------"));
-            product.set(DataComponents.LORE, new ItemLore(lore));
-            getContainer().setItem(PRODUCT_DISPLAY_SLOT, product);
-        } else {
-            ItemStack emptyProd = ShopCreationMenu.createGuiItem(
+        if (chestContainer == null || trades.isEmpty()) {
+            ItemStack emptyItem = ShopCreationMenu.createGuiItem(
                     Items.BARRIER,
-                    Component.literal("§cOut of Stock"),
-                    List.of(Component.literal("§7No items currently in chest to sell."))
+                    Component.literal("§cNo Trades Available"),
+                    List.of(Component.literal("§7This chest has no active shop trades."))
             );
-            getContainer().setItem(PRODUCT_DISPLAY_SLOT, emptyProd);
+            int midSlot = getContainer().getContainerSize() / 2;
+            getContainer().setItem(midSlot, emptyItem);
+            return;
         }
 
-        // Slot 13: Price Display
-        ItemStack price = new ItemStack(trade.getPriceItem(), Math.min(trade.getPriceCount(), trade.getPriceItem().getDefaultMaxStackSize()));
-        List<Component> priceLore = new ArrayList<>();
-        priceLore.add(Component.literal("§7§m------------------------"));
-        priceLore.add(Component.literal("§7Price: §b" + trade.getPriceCount() + "x " + ChestShopManager.getItemDisplayName(trade.getPriceItem())));
-        priceLore.add(Component.literal("§7Your Balance: " + (buyerBalance >= trade.getPriceCount() ? "§a" + buyerBalance + " in inventory" : "§c" + buyerBalance + " (Need " + (trade.getPriceCount() - buyerBalance) + " more)")));
-        priceLore.add(Component.literal("§7§m------------------------"));
-        price.set(DataComponents.LORE, new ItemLore(priceLore));
-        getContainer().setItem(PRICE_DISPLAY_SLOT, price);
+        int maxTrades = (getContainer().getContainerSize() == 54) ? 6 : 3;
+        int countToRender = Math.min(trades.size(), maxTrades);
 
-        // Slot 15: Buy Button
-        if (stock < trade.getSaleCount() || actualSaleItem == null) {
-            ItemStack outOfStockBtn = ShopCreationMenu.createGuiItem(
-                    Items.STAINED_GLASS_PANE.red(),
-                    Component.literal("§c§l[ OUT OF STOCK ]"),
-                    List.of(
-                            Component.literal("§7The chest does not have enough stock!"),
-                            Component.literal("§8Current stock: " + stock + " / " + trade.getSaleCount())
-                    )
+        for (int i = 0; i < countToRender; i++) {
+            ShopTrade trade = trades.get(i);
+            int row = (trades.size() == 1) ? 1 : i;
+
+            int productSlot = row * 9 + 2;
+            int arrow1Slot  = row * 9 + 3;
+            int priceSlot   = row * 9 + 4;
+            int arrow2Slot  = row * 9 + 5;
+            int buySlot     = row * 9 + 6;
+
+            int stock = ChestShopManager.getStockCount(chestContainer, trade);
+            Item actualSaleItem = ChestShopManager.getActualSaleItem(chestContainer, trade);
+            int buyerBalance = ChestShopManager.countPlayerItem(player, trade.getPriceItem());
+
+            // Product Display (Slot 2 in row)
+            if (actualSaleItem != null) {
+                ItemStack product = new ItemStack(actualSaleItem, Math.min(trade.getSaleCount(), actualSaleItem.getDefaultMaxStackSize()));
+                List<Component> lore = new ArrayList<>();
+                lore.add(Component.literal("§7§m------------------------"));
+                lore.add(Component.literal("§7Product: §f" + trade.getSaleCount() + "x ").append(ChestShopManager.getItemComponent(actualSaleItem).copy().withStyle(net.minecraft.ChatFormatting.WHITE)));
+                lore.add(Component.literal("§7Chest Stock: " + (stock >= trade.getSaleCount() ? "§a" + stock + " available" : "§cOut of Stock (" + stock + ")")));
+                if (trades.size() > 1) {
+                    lore.add(Component.literal("§6Price Option: §e#" + (i + 1)));
+                }
+                lore.add(Component.literal("§7Shop Owner: §e" + (ownerName != null ? ownerName : "Unknown")));
+                lore.add(Component.literal("§7§m------------------------"));
+                product.set(DataComponents.LORE, new ItemLore(lore));
+                getContainer().setItem(productSlot, product);
+            } else {
+                ItemStack emptyProd = ShopCreationMenu.createGuiItem(
+                        Items.BARRIER,
+                        Component.literal("§cOut of Stock"),
+                        List.of(Component.literal("§7No items currently in chest to sell."))
+                );
+                getContainer().setItem(productSlot, emptyProd);
+            }
+
+            // Arrow 1: "FOR"
+            ItemStack arrow1 = ShopCreationMenu.createGuiItem(
+                    Items.STAINED_GLASS_PANE.lightBlue(),
+                    Component.literal("§b➡ FOR ➡"),
+                    List.of(Component.literal("§7Cost requirement:"))
             );
-            getContainer().setItem(BUY_BUTTON_SLOT, outOfStockBtn);
-        } else if (buyerBalance < trade.getPriceCount()) {
-            ItemStack cannotAffordBtn = ShopCreationMenu.createGuiItem(
-                    Items.STAINED_GLASS_PANE.yellow(),
-                    Component.literal("§e§l[ CANNOT AFFORD ]"),
-                    List.of(
-                            Component.literal("§7You need §b" + trade.getPriceCount() + "x " + ChestShopManager.getItemDisplayName(trade.getPriceItem())),
-                            Component.literal("§7You currently have: §e" + buyerBalance + "x")
-                    )
+            getContainer().setItem(arrow1Slot, arrow1);
+
+            // Price Display (Slot 4 in row)
+            ItemStack price = new ItemStack(trade.getPriceItem(), Math.min(trade.getPriceCount(), trade.getPriceItem().getDefaultMaxStackSize()));
+            List<Component> priceLore = new ArrayList<>();
+            priceLore.add(Component.literal("§7§m------------------------"));
+            priceLore.add(Component.literal("§7Price: §b" + trade.getPriceCount() + "x ").append(ChestShopManager.getItemComponent(trade.getPriceItem()).copy().withStyle(net.minecraft.ChatFormatting.AQUA)));
+            priceLore.add(Component.literal("§7Your Balance: " + (buyerBalance >= trade.getPriceCount() ? "§a" + buyerBalance + " in inventory" : "§c" + buyerBalance + " (Need " + (trade.getPriceCount() - buyerBalance) + " more)")));
+            priceLore.add(Component.literal("§7§m------------------------"));
+            price.set(DataComponents.LORE, new ItemLore(priceLore));
+            getContainer().setItem(priceSlot, price);
+
+            // Arrow 2: "BUY"
+            ItemStack arrow2 = ShopCreationMenu.createGuiItem(
+                    Items.STAINED_GLASS_PANE.lightBlue(),
+                    Component.literal("§a➡ BUY ➡"),
+                    List.of(Component.literal("§7Click button on right to buy"))
             );
-            getContainer().setItem(BUY_BUTTON_SLOT, cannotAffordBtn);
-        } else {
-            ItemStack buyBtn = ShopCreationMenu.createGuiItem(
-                    Items.STAINED_GLASS_PANE.lime(),
-                    Component.literal("§a§l[ CLICK TO BUY ]"),
-                    List.of(
-                            Component.literal("§7Cost: §b" + trade.getPriceCount() + "x " + ChestShopManager.getItemDisplayName(trade.getPriceItem())),
-                            Component.literal("§7Receive: §f" + trade.getSaleCount() + "x " + ChestShopManager.getItemDisplayName(actualSaleItem)),
-                            Component.literal("§eClick here to purchase 1 batch!")
-                    )
-            );
-            getContainer().setItem(BUY_BUTTON_SLOT, buyBtn);
+            getContainer().setItem(arrow2Slot, arrow2);
+
+            // Buy Button (Slot 6 in row)
+            if (stock < trade.getSaleCount() || actualSaleItem == null) {
+                ItemStack outOfStockBtn = ShopCreationMenu.createGuiItem(
+                        Items.STAINED_GLASS_PANE.red(),
+                        Component.literal("§c§l[ OUT OF STOCK ]"),
+                        List.of(
+                                Component.literal("§7The chest does not have enough stock!"),
+                                Component.literal("§8Stock: " + stock + " / " + trade.getSaleCount())
+                        )
+                );
+                getContainer().setItem(buySlot, outOfStockBtn);
+            } else if (buyerBalance < trade.getPriceCount()) {
+                ItemStack cannotAffordBtn = ShopCreationMenu.createGuiItem(
+                        Items.STAINED_GLASS_PANE.yellow(),
+                        Component.literal("§e§l[ CANNOT AFFORD ]"),
+                        List.of(
+                                Component.literal("§7You need §b" + trade.getPriceCount() + "x ").append(ChestShopManager.getItemComponent(trade.getPriceItem())),
+                                Component.literal("§7You currently have: §e" + buyerBalance + "x")
+                        )
+                );
+                getContainer().setItem(buySlot, cannotAffordBtn);
+            } else {
+                ItemStack buyBtn = ShopCreationMenu.createGuiItem(
+                        Items.STAINED_GLASS_PANE.lime(),
+                        Component.literal("§a§l[ CLICK TO BUY ]"),
+                        List.of(
+                                Component.literal("§7Cost: §b" + trade.getPriceCount() + "x ").append(ChestShopManager.getItemComponent(trade.getPriceItem())),
+                                Component.literal("§7Receive: §f" + trade.getSaleCount() + "x ").append(ChestShopManager.getItemComponent(actualSaleItem)),
+                                Component.literal("§eClick here to purchase 1 batch!")
+                        )
+                );
+                getContainer().setItem(buySlot, buyBtn);
+            }
         }
     }
 
     @Override
     public void clicked(int slotIndex, int button, ContainerInput input, Player player) {
-        // Clicks inside the shop menu (top 27 slots)
-        if (slotIndex >= 0 && slotIndex < 27) {
-            if (slotIndex == BUY_BUTTON_SLOT) {
-                handlePurchase(player);
+        int containerSize = getContainer().getContainerSize();
+
+        // Clicks inside the shop menu
+        if (slotIndex >= 0 && slotIndex < containerSize) {
+            int maxTrades = (containerSize == 54) ? 6 : 3;
+            int count = Math.min(trades.size(), maxTrades);
+
+            for (int i = 0; i < count; i++) {
+                int row = (trades.size() == 1) ? 1 : i;
+                int buySlot = row * 9 + 6;
+
+                if (slotIndex == buySlot) {
+                    handlePurchase(player, trades.get(i));
+                    break;
+                }
             }
             sendAllDataToRemote();
             return;
         }
 
         // Clicks in player inventory
-        if (slotIndex >= 27) {
+        if (slotIndex >= containerSize) {
             if (input == ContainerInput.QUICK_MOVE) {
                 // Prevent shift-clicking items into the GUI
                 sendAllDataToRemote();
@@ -165,7 +223,7 @@ public class ShopBuyMenu extends ChestMenu {
         }
     }
 
-    private void handlePurchase(Player player) {
+    private void handlePurchase(Player player, ShopTrade trade) {
         Container chestContainer = ChestShopManager.getChestContainer(level, chestPos);
         if (chestContainer == null) {
             if (player instanceof ServerPlayer sp) {
@@ -176,7 +234,7 @@ public class ShopBuyMenu extends ChestMenu {
 
         int stock = ChestShopManager.getStockCount(chestContainer, trade);
         if (stock < trade.getSaleCount()) {
-            player.sendSystemMessage(Component.literal("§c[Chest Shop] This shop is out of stock!"));
+            player.sendSystemMessage(Component.literal("§c[Chest Shop] This trade is out of stock!"));
             level.playSound(null, player.blockPosition(), SoundEvents.VILLAGER_NO, SoundSource.PLAYERS, 1.0f, 1.0f);
             updateGui(player);
             return;
@@ -184,7 +242,10 @@ public class ShopBuyMenu extends ChestMenu {
 
         int buyerBalance = ChestShopManager.countPlayerItem(player, trade.getPriceItem());
         if (buyerBalance < trade.getPriceCount()) {
-            player.sendSystemMessage(Component.literal("§c[Chest Shop] You need " + trade.getPriceCount() + "x " + ChestShopManager.getItemDisplayName(trade.getPriceItem()) + " to buy this!"));
+            Component needMsg = Component.literal("§c[Chest Shop] You need " + trade.getPriceCount() + "x ")
+                    .append(ChestShopManager.getItemComponent(trade.getPriceItem()))
+                    .append(Component.literal(" to buy this!"));
+            player.sendSystemMessage(needMsg);
             level.playSound(null, player.blockPosition(), SoundEvents.VILLAGER_NO, SoundSource.PLAYERS, 1.0f, 1.0f);
             updateGui(player);
             return;
@@ -226,27 +287,32 @@ public class ShopBuyMenu extends ChestMenu {
 
         // Feedback sound
         level.playSound(null, player.blockPosition(), SoundEvents.NOTE_BLOCK_CHIME.value(), SoundSource.PLAYERS, 1.0f, 1.5f);
-        player.sendSystemMessage(Component.literal("§a✔ Purchased " + trade.getSaleCount() + "x "
-                + ChestShopManager.getItemDisplayName(actualSaleItem) + " for "
-                + trade.getPriceCount() + "x " + ChestShopManager.getItemDisplayName(trade.getPriceItem()) + "!"));
+        Component purchaseMsg = Component.literal("§a✔ Purchased " + trade.getSaleCount() + "x ")
+                .append(ChestShopManager.getItemComponent(actualSaleItem).copy().withStyle(net.minecraft.ChatFormatting.GREEN))
+                .append(Component.literal("§a for " + trade.getPriceCount() + "x "))
+                .append(ChestShopManager.getItemComponent(trade.getPriceItem()).copy().withStyle(net.minecraft.ChatFormatting.AQUA))
+                .append(Component.literal("§a!"));
+        player.sendSystemMessage(purchaseMsg);
 
         // Notify owner if online
-        notifyOwner(player, actualSaleItem);
+        notifyOwner(player, trade, actualSaleItem);
 
         // Update GUI display
         updateGui(player);
     }
 
-    private void notifyOwner(Player buyer, Item saleItem) {
+    private void notifyOwner(Player buyer, ShopTrade trade, Item saleItem) {
         if (ownerUuid == null || ownerUuid.isBlank() || level.getServer() == null) return;
         try {
             UUID uuid = UUID.fromString(ownerUuid);
             ServerPlayer ownerPlayer = level.getServer().getPlayerList().getPlayer(uuid);
             if (ownerPlayer != null && ownerPlayer.isAlive()) {
-                ownerPlayer.sendSystemMessage(Component.literal("§e[Shop] " + buyer.getName().getString()
-                        + " bought " + trade.getSaleCount() + "x " + ChestShopManager.getItemDisplayName(saleItem)
-                        + " for " + trade.getPriceCount() + "x " + ChestShopManager.getItemDisplayName(trade.getPriceItem())
-                        + " at (" + chestPos.getX() + ", " + chestPos.getY() + ", " + chestPos.getZ() + ")!"));
+                Component notifyMsg = Component.literal("§e[Shop] " + buyer.getName().getString() + " bought " + trade.getSaleCount() + "x ")
+                        .append(ChestShopManager.getItemComponent(saleItem).copy().withStyle(net.minecraft.ChatFormatting.YELLOW))
+                        .append(Component.literal(" for " + trade.getPriceCount() + "x "))
+                        .append(ChestShopManager.getItemComponent(trade.getPriceItem()).copy().withStyle(net.minecraft.ChatFormatting.AQUA))
+                        .append(Component.literal(" at (" + chestPos.getX() + ", " + chestPos.getY() + ", " + chestPos.getZ() + ")!"));
+                ownerPlayer.sendSystemMessage(notifyMsg);
             }
         } catch (IllegalArgumentException ignored) {}
     }

@@ -7,25 +7,34 @@ A lightweight, server-friendly Chest Shop mod for **Fabric Minecraft 26.3** ("Wi
 ## 🌟 Features
 
 - **100% Vanilla Chest Compatible**: Works with standard wooden chests, trapped chests, and double chests. No custom blocks or tile entities required.
+- **Multiple Alternative Prices (Multi-Currency)**:
+  - Sell the same product for multiple different currencies/prices!
+  - Example: `1 diamond or 10 iron_ingot -> 64 cooked_beef`
+  - Also supports `/` or `|` delimiters: `1 diamond / 10 iron_ingot / 32 coal -> 64 cooked_beef`
+  - Customers can choose whichever currency they prefer directly in the Buy UI.
 - **Graphical Paper Creation UI (`/shopcreate` or `/shop create`)**:
-  - Run the command to open a visual 3-row menu.
-  - Place your desired price item/stack into the **Price Slot**.
-  - Place your desired sale item/stack into the **Sale Slot** (or leave empty to sell whatever is in the chest).
-  - Click **[ Create Shop Paper ]** to receive the correctly formatted and lore-annotated paper directly in your inventory!
-  - Your sample items are safely returned to your inventory (never consumed).
+  - Run `/shopcreate` to open an interactive visual creator GUI.
+  - **Price 1 (Primary)**, **Price 2 (Optional)**, and **Price 3 (Optional)** slots allow setting alternative currencies with ease.
+  - Place your sale item into the **Sale Slot** (or leave empty to sell whatever is in the chest).
+  - Click **[ Create Shop Paper ]** (Emerald) to generate the formatted, lore-annotated paper directly in your inventory!
+  - Sample items placed into slots are 100% safely returned to your inventory upon paper creation or menu close.
 - **Interactive Graphical Buy UI**:
   - Right-clicking any active shop chest opens a dedicated visual shop window!
-  - **Product Slot**: Displays the exact item and batch count, chest stock counter, and owner name.
-  - **Price Slot**: Displays required payment and your personal current balance.
-  - **Interactive Buy Button**:
-    - 🟩 **[ CLICK TO BUY ]** (Lime): Deducts payment, deposits money into the chest, gives items to buyer, plays chime (`♪`), and updates stock in real time. Click again to purchase more!
+  - **Multi-Trade Support**: Displays each trade option on its own clean row:
+    `[ Product + Stock Lore ]  ➡ FOR ➡  [ Price + Balance Lore ]  ➡ BUY ➡  [ Buy Button ]`
+  - **Interactive Status Buttons**:
+    - 🟩 **[ CLICK TO BUY ]** (Lime): Deducts payment, deposits money into the chest, gives items to buyer, plays chime (`♪`), and updates stock in real time.
     - 🟨 **[ CANNOT AFFORD ]** (Yellow): Displays when the buyer is missing required funds.
     - 🟥 **[ OUT OF STOCK ]** (Red): Displays when the chest inventory has insufficient stock.
-- **Flexible Anvil Syntax (Manual Setup also supported)**:
-  - `1 diamond -> 16 oak_log` (Price -> Sale)
+- **Full Item Name Support in Chat & UI**:
+  - Chat notifications always display human-readable, localized item names (e.g. `✔ Purchased 64x Cooked Beef for 1x Diamond!`).
+  - Shop owners receive instant notifications when items are bought.
+- **Flexible Anvil / Rename Syntax**:
+  - `1 diamond or 10 iron_ingot -> 64 cooked_beef` (Multi-price alternative)
+  - `1 diamond -> 16 oak_log` (Standard Price -> Sale)
   - `2 emeralds = 64 cooked_beef`
   - `16 oak_log for 1 diamond` (Sale for Price)
-  - `[Shop] 1 diamond` or `1 diamond` (Dynamic mode: sells whatever items are in the chest for 1 diamond each)
+  - `[Shop] 1 diamond` or `1 diamond` (Dynamic mode: sells whatever is in chest for 1 diamond)
   - Automatically handles plurals (`diamonds` → `diamond`, `apples` → `apple`) and spaced names (`cooked beef` → `cooked_beef`).
 - **Complete Anti-Theft Security**:
   - **Chest GUI Lock**: Non-owners cannot open the raw chest inventory to steal items or deposited currency.
@@ -34,25 +43,24 @@ A lightweight, server-friendly Chest Shop mod for **Fabric Minecraft 26.3** ("Wi
 - **Owner Restocking & Preview**:
   - **Owner Normal Right-Click**: Opens the standard chest inventory to restock goods, collect profits, or adjust the paper.
   - **Owner Sneak + Right-Click**: Opens the graphical Buy Menu in preview mode to test how customers see the shop.
-  - **Left-Click (Punch)**: Displays quick chat summary of price, stock, and owner.
+  - **Left-Click (Punch)**: Displays quick chat summary of all available prices, stock, and owner.
 
 ---
 
 ## 🛒 How to Use
 
 ### 1. Creating a Shop
-1. Place a normal Chest down.
-2. Rename a piece of **Paper** in an Anvil to your desired trade, for example:
-   ```
-   1 diamond -> 16 oak_log
-   ```
-3. Put the renamed paper inside the chest along with the items you want to sell (e.g. stacks of Oak Logs).
-4. As soon as you interact with the chest, you are automatically registered as the shop owner!
+1. Place a normal Chest down and put your stock inside (e.g. Cooked Beef).
+2. Type `/shopcreate` in chat.
+3. Place your primary price in **Price 1** (e.g. 1 Diamond), and optionally alternative prices in **Price 2** (e.g. 10 Iron Ingot).
+4. Place your product in the **Sale Slot** (e.g. 64 Cooked Beef).
+5. Click **[ Create Shop Paper ]**.
+6. Place the generated paper into the chest. You are now the registered owner!
 
 ### 2. Buying from a Shop
 1. **To view info**: Left-click (punch) the chest with an empty hand.
-2. **To buy**: Hold the required payment item (e.g. 1 Diamond) in your main hand and right-click the chest.
-3. The payment is transferred to the chest, and your purchased goods are deposited directly into your inventory!
+2. **To buy via GUI**: Right-click the chest with an empty hand to open the visual Buy Menu. Click the green **[ CLICK TO BUY ]** button on your preferred price row!
+3. **To buy via quick-click**: Right-click the chest while holding the exact payment (e.g. 1 Diamond or 10 Iron Ingot).
 
 ---
 
@@ -87,4 +95,4 @@ Run the included JUnit 5 test suite:
 ```bash
 gradlew.bat test
 ```
-All parser formats, plurals, prefixes, and item resolution are automatically validated.
+Validates single and multi-price syntax (`or`, `/`, `|`), plurals, prefixes, and edge cases.

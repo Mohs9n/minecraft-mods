@@ -54,9 +54,9 @@ public class SimpleChestShopMod implements ModInitializer {
             }
 
             ServerLevel serverLevel = (ServerLevel) level;
-            ShopTrade trade = ChestShopManager.getShopTrade(level, pos);
+            java.util.List<ShopTrade> trades = ChestShopManager.getAllShopTrades(level, pos);
 
-            if (trade == null || !trade.isValid()) {
+            if (trades.isEmpty()) {
                 // If there's no active shop, normal chest behavior
                 return InteractionResult.PASS;
             }
@@ -76,7 +76,7 @@ public class SimpleChestShopMod implements ModInitializer {
                 // Owner is opening the chest
                 if (player.isShiftKeyDown()) {
                     // Sneak right-click opens the Buyer Preview GUI
-                    com.simplechestshop.gui.ShopBuyMenu.open((ServerPlayer) player, level, pos, trade, record.ownerName, record.ownerUuid);
+                    com.simplechestshop.gui.ShopBuyMenu.open((ServerPlayer) player, level, pos, trades, record.ownerName, record.ownerUuid);
                     return InteractionResult.SUCCESS;
                 }
                 // Allow owner to open the chest GUI normally to manage stock/earnings
@@ -84,7 +84,7 @@ public class SimpleChestShopMod implements ModInitializer {
             }
 
             // Customer interaction: Open graphical Buy Menu!
-            com.simplechestshop.gui.ShopBuyMenu.open((ServerPlayer) player, level, pos, trade, record.ownerName, record.ownerUuid);
+            com.simplechestshop.gui.ShopBuyMenu.open((ServerPlayer) player, level, pos, trades, record.ownerName, record.ownerUuid);
             return InteractionResult.SUCCESS;
         });
 
@@ -99,12 +99,12 @@ public class SimpleChestShopMod implements ModInitializer {
                 return InteractionResult.PASS;
             }
 
-            ShopTrade trade = ChestShopManager.getShopTrade(level, pos);
-            if (trade != null && trade.isValid()) {
+            java.util.List<ShopTrade> trades = ChestShopManager.getAllShopTrades(level, pos);
+            if (!trades.isEmpty()) {
                 Container container = ChestShopManager.getChestContainer(level, pos);
                 ChestShopData.ShopRecord record = ChestShopData.getRecord(pos);
                 String ownerName = record != null ? record.ownerName : "Unknown";
-                ChestShopManager.showShopInfo(player, trade, container, ownerName);
+                ChestShopManager.showShopInfo(player, trades, container, ownerName);
                 return InteractionResult.SUCCESS;
             }
 
@@ -121,8 +121,8 @@ public class SimpleChestShopMod implements ModInitializer {
                 return true;
             }
 
-            ShopTrade trade = ChestShopManager.getShopTrade(level, pos);
-            if (trade != null && trade.isValid()) {
+            java.util.List<ShopTrade> trades = ChestShopManager.getAllShopTrades(level, pos);
+            if (!trades.isEmpty()) {
                 ChestShopData.ShopRecord record = ChestShopData.getRecord(pos);
                 if (record != null && !player.getUUID().toString().equals(record.ownerUuid)) {
                     if (!player.isCreative()) {

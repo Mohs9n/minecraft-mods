@@ -32,11 +32,14 @@ public class ShopParser {
     }
 
     /**
-     * Parses the custom name of the paper into a ShopTrade.
+     * Parses the custom name of the paper into one or more ShopTrades.
+     * Supports multiple alternative prices using "or", "/", or "|".
+     * E.g. "1 diamond or 10 iron_ingot -> 64 cooked_beef"
      */
-    public static ShopTrade parseTrade(String customName) {
+    public static java.util.List<ShopTrade> parseTrades(String customName) {
+        java.util.List<ShopTrade> list = new java.util.ArrayList<>();
         if (customName == null || customName.isBlank()) {
-            return ShopTrade.invalid(customName);
+            return list;
         }
 
         String cleaned = customName.trim();
@@ -49,42 +52,71 @@ public class ShopParser {
             cleaned = cleaned.substring(6).trim();
         }
 
-        // Try Pattern 1: Arrow/Equals/Colon: "1 diamond -> 16 oak_log" (Price -> Sale)
+        // Try Pattern 1: Arrow/Equals/Colon: "1 diamond or 10 iron -> 64 cooked_beef" (Price -> Sale)
         Matcher arrowMatcher = ARROW_PATTERN.matcher(cleaned);
         if (arrowMatcher.matches()) {
             String pricePart = arrowMatcher.group(1).trim();
             String salePart = arrowMatcher.group(2).trim();
 
-            ParsedItem price = parseCountAndItem(pricePart);
             ParsedItem sale = parseCountAndItem(salePart);
-
-            if (price != null && sale != null) {
-                return new ShopTrade(price.item, price.count, sale.item, sale.count, customName);
+            if (sale != null) {
+                String[] priceTokens = splitAlternativePrices(pricePart);
+                for (String token : priceTokens) {
+                    ParsedItem price = parseCountAndItem(token);
+                    if (price != null) {
+                        list.add(new ShopTrade(price.item, price.count, sale.item, sale.count, customName));
+                    }
+                }
+                if (!list.isEmpty()) {
+                    return list;
+                }
             }
         }
 
-        // Try Pattern 2: "16 oak_log for 1 diamond" (Sale for Price)
+        // Try Pattern 2: "64 cooked_beef for 1 diamond or 10 iron" (Sale for Price)
         Matcher forMatcher = FOR_PATTERN.matcher(cleaned);
         if (forMatcher.matches()) {
             String salePart = forMatcher.group(1).trim();
             String pricePart = forMatcher.group(2).trim();
 
             ParsedItem sale = parseCountAndItem(salePart);
-            ParsedItem price = parseCountAndItem(pricePart);
-
-            if (price != null && sale != null) {
-                return new ShopTrade(price.item, price.count, sale.item, sale.count, customName);
+            if (sale != null) {
+                String[] priceTokens = splitAlternativePrices(pricePart);
+                for (String token : priceTokens) {
+                    ParsedItem price = parseCountAndItem(token);
+                    if (price != null) {
+                        list.add(new ShopTrade(price.item, price.count, sale.item, sale.count, customName));
+                    }
+                }
+                if (!list.isEmpty()) {
+                    return list;
+                }
             }
         }
 
-        // Try Pattern 3: Simple Price only: "1 diamond" or "2 emeralds"
-        // In this mode, whatever else is in the chest will be sold (1 per purchase).
-        ParsedItem singlePrice = parseCountAndItem(cleaned);
-        if (singlePrice != null) {
-            return new ShopTrade(singlePrice.item, singlePrice.count, null, 1, customName);
+        // Try Pattern 3: Simple Price only: "1 diamond or 2 emeralds"
+        String[] priceTokens = splitAlternativePrices(cleaned);
+        for (String token : priceTokens) {
+            ParsedItem price = parseCountAndItem(token);
+            if (price != null) {
+                list.add(new ShopTrade(price.item, price.count, null, 1, customName));
+            }
         }
 
-        return ShopTrade.invalid(customName);
+        return list;
+    }
+
+    /**
+     * Parses a single trade, returning the primary trade or invalid.
+     */
+    public static ShopTrade parseTrade(String customName) {
+        java.util.List<ShopTrade> list = parseTrades(customName);
+        return list.isEmpty() ? ShopTrade.invalid(customName) : list.get(0);
+    }
+
+    private static String[] splitAlternativePrices(String text) {
+        if (text == null) return new String[0];
+        return text.split("\\s+(?:or|\\/|\\|)\\s*|\\s*\\/\\s*|\\s*\\|\\s*");
     }
 
     private static ParsedItem parseCountAndItem(String text) {

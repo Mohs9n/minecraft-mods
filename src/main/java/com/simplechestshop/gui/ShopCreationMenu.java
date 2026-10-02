@@ -1,5 +1,6 @@
 package com.simplechestshop.gui;
 
+import com.simplechestshop.ChestShopManager;
 import com.simplechestshop.ShopParser;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -27,11 +28,19 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class ShopCreationMenu extends ChestMenu {
-    public static final int PRICE_SLOT = 11;
-    public static final int SALE_SLOT = 13;
-    public static final int CREATE_BUTTON_SLOT = 15;
-    public static final int PRICE_INFO_SLOT = 10;
-    public static final int SALE_INFO_SLOT = 12;
+    public static final int PRICE_1_SLOT = 10;
+    public static final int PRICE_2_SLOT = 11;
+    public static final int PRICE_3_SLOT = 12;
+    public static final int ARROW_1_SLOT = 13;
+    public static final int SALE_SLOT = 14;
+    public static final int ARROW_2_SLOT = 15;
+    public static final int CREATE_BUTTON_SLOT = 16;
+
+    public static final int PRICE_1_INFO_SLOT = 1;
+    public static final int PRICE_2_INFO_SLOT = 2;
+    public static final int PRICE_3_INFO_SLOT = 3;
+    public static final int SALE_INFO_SLOT = 5;
+    public static final int CREATE_INFO_SLOT = 7;
 
     public ShopCreationMenu(int containerId, Inventory playerInventory) {
         this(containerId, playerInventory, new SimpleContainer(27));
@@ -45,53 +54,94 @@ public class ShopCreationMenu extends ChestMenu {
     public static void open(ServerPlayer player) {
         player.openMenu(new SimpleMenuProvider(
                 (containerId, playerInv, p) -> new ShopCreationMenu(containerId, playerInv),
-                Component.literal("§6Create Shop Paper")
+                Component.literal("§6Create Shop Paper §8(Multi-Price)")
         ));
     }
 
     private void setupGui() {
         ItemStack border = createGuiItem(Items.STAINED_GLASS_PANE.gray(), Component.literal("§r"), null);
         for (int i = 0; i < 27; i++) {
-            if (i == PRICE_SLOT || i == SALE_SLOT) {
+            if (isEditableSlot(i)) {
                 continue;
             }
-            getContainer().setItem(i, border);
+            getContainer().setItem(i, border.copy());
         }
 
-        // Info icons
-        ItemStack priceInfo = createGuiItem(
+        // Row 0 Info icons
+        ItemStack price1Info = createGuiItem(
                 Items.GOLD_INGOT,
-                Component.literal("§6§lPrice Slot §7→"),
+                Component.literal("§6§lPrice 1 §7(Primary)"),
                 List.of(
-                        Component.literal("§7Put the currency/price you want to charge"),
-                        Component.literal("§7into the slot on the right."),
-                        Component.literal("§eExample: 1x Diamond or 2x Emerald")
+                        Component.literal("§7Place your main price/currency in the slot below."),
+                        Component.literal("§eExample: 1x Diamond")
                 )
         );
-        getContainer().setItem(PRICE_INFO_SLOT, priceInfo);
+        getContainer().setItem(PRICE_1_INFO_SLOT, price1Info);
+
+        ItemStack price2Info = createGuiItem(
+                Items.IRON_INGOT,
+                Component.literal("§f§lPrice 2 §7(Alternative - Optional)"),
+                List.of(
+                        Component.literal("§7Place an optional 2nd price in the slot below."),
+                        Component.literal("§eExample: 10x Iron Ingot"),
+                        Component.literal("§8Buyers can choose either price!")
+                )
+        );
+        getContainer().setItem(PRICE_2_INFO_SLOT, price2Info);
+
+        ItemStack price3Info = createGuiItem(
+                Items.COPPER_INGOT,
+                Component.literal("§c§lPrice 3 §7(Alternative - Optional)"),
+                List.of(
+                        Component.literal("§7Place an optional 3rd price in the slot below."),
+                        Component.literal("§eExample: 32x Coal"),
+                        Component.literal("§8Buyers can choose any configured price!")
+                )
+        );
+        getContainer().setItem(PRICE_3_INFO_SLOT, price3Info);
 
         ItemStack saleInfo = createGuiItem(
                 Items.CHEST,
-                Component.literal("§b§lSale Slot §7→"),
+                Component.literal("§b§lSale Slot §7(Item to Sell)"),
                 List.of(
-                        Component.literal("§7Put the item you want to sell into"),
-                        Component.literal("§7the slot on the right (optional)."),
-                        Component.literal("§8If empty, shop will sell any chest contents.")
+                        Component.literal("§7Place the item you want to sell below."),
+                        Component.literal("§8Optional: if empty, sells any items in chest.")
                 )
         );
         getContainer().setItem(SALE_INFO_SLOT, saleInfo);
 
+        ItemStack createInfo = createGuiItem(
+                Items.WRITABLE_BOOK,
+                Component.literal("§a§lCreate Paper"),
+                List.of(
+                        Component.literal("§7Click the button below when ready to generate!"),
+                        Component.literal("§7Sample items will be safely returned.")
+                )
+        );
+        getContainer().setItem(CREATE_INFO_SLOT, createInfo);
+
+        // Separator arrows in row 1
+        ItemStack arrow1 = createGuiItem(Items.STAINED_GLASS_PANE.lightBlue(), Component.literal("§b➡ FOR ➡"), null);
+        getContainer().setItem(ARROW_1_SLOT, arrow1);
+
+        ItemStack arrow2 = createGuiItem(Items.STAINED_GLASS_PANE.lime(), Component.literal("§a➡"), null);
+        getContainer().setItem(ARROW_2_SLOT, arrow2);
+
         // Create Button
         ItemStack createBtn = createGuiItem(
-                Items.WRITABLE_BOOK,
+                Items.EMERALD,
                 Component.literal("§a§l[ Create Shop Paper ]"),
                 List.of(
                         Component.literal("§7Click here to generate your shop paper!"),
                         Component.literal("§7Your sample items will be safely returned."),
-                        Component.literal("§eRequires at least a Price item.")
+                        Component.literal("§eRequires at least Price 1.")
                 )
         );
         getContainer().setItem(CREATE_BUTTON_SLOT, createBtn);
+    }
+
+    private boolean isEditableSlot(int slot) {
+        return slot == PRICE_1_SLOT || slot == PRICE_2_SLOT || slot == PRICE_3_SLOT || slot == SALE_SLOT;
     }
 
     @Override
@@ -104,8 +154,8 @@ public class ShopCreationMenu extends ChestMenu {
                 return;
             }
 
-            // Only slot 11 and 13 are editable by player
-            if (slotIndex == PRICE_SLOT || slotIndex == SALE_SLOT) {
+            // Only designated slots are editable by player
+            if (isEditableSlot(slotIndex)) {
                 super.clicked(slotIndex, button, input, player);
                 return;
             }
@@ -122,12 +172,17 @@ public class ShopCreationMenu extends ChestMenu {
                 Slot slot = getSlot(slotIndex);
                 if (slot != null && slot.hasItem()) {
                     ItemStack moving = slot.getItem();
-                    // Try slot 11 first if empty
-                    if (getContainer().getItem(PRICE_SLOT).isEmpty()) {
-                        getContainer().setItem(PRICE_SLOT, moving.copy());
+                    if (getContainer().getItem(PRICE_1_SLOT).isEmpty()) {
+                        getContainer().setItem(PRICE_1_SLOT, moving.copy());
                         slot.set(ItemStack.EMPTY);
                     } else if (getContainer().getItem(SALE_SLOT).isEmpty()) {
                         getContainer().setItem(SALE_SLOT, moving.copy());
+                        slot.set(ItemStack.EMPTY);
+                    } else if (getContainer().getItem(PRICE_2_SLOT).isEmpty()) {
+                        getContainer().setItem(PRICE_2_SLOT, moving.copy());
+                        slot.set(ItemStack.EMPTY);
+                    } else if (getContainer().getItem(PRICE_3_SLOT).isEmpty()) {
+                        getContainer().setItem(PRICE_3_SLOT, moving.copy());
                         slot.set(ItemStack.EMPTY);
                     }
                     broadcastChanges();
@@ -140,29 +195,39 @@ public class ShopCreationMenu extends ChestMenu {
     }
 
     private void handleCreatePaper(Player player) {
-        ItemStack priceStack = getContainer().getItem(PRICE_SLOT);
+        ItemStack p1 = getContainer().getItem(PRICE_1_SLOT);
+        ItemStack p2 = getContainer().getItem(PRICE_2_SLOT);
+        ItemStack p3 = getContainer().getItem(PRICE_3_SLOT);
         ItemStack saleStack = getContainer().getItem(SALE_SLOT);
 
-        if (priceStack.isEmpty()) {
-            player.sendSystemMessage(Component.literal("§c[Shop Creator] Please place a price item in the Price slot (left)!"));
+        if (p1.isEmpty()) {
+            player.sendSystemMessage(Component.literal("§c[Shop Creator] Please place at least one price item in Price Slot 1 (Primary)!"));
             if (player.level() != null) {
                 player.level().playSound(null, player.blockPosition(), SoundEvents.VILLAGER_NO, SoundSource.PLAYERS, 1.0f, 1.0f);
             }
             return;
         }
 
-        Identifier priceId = BuiltInRegistries.ITEM.getKey(priceStack.getItem());
-        int priceCount = priceStack.getCount();
-        String priceName = priceId.getPath();
+        List<ItemStack> priceStacks = new ArrayList<>();
+        priceStacks.add(p1);
+        if (!p2.isEmpty()) priceStacks.add(p2);
+        if (!p3.isEmpty()) priceStacks.add(p3);
 
+        List<String> priceParts = new ArrayList<>();
+        for (ItemStack ps : priceStacks) {
+            Identifier id = BuiltInRegistries.ITEM.getKey(ps.getItem());
+            priceParts.add(ps.getCount() + " " + id.getPath());
+        }
+
+        String pricesText = String.join(" or ", priceParts);
         String generatedTradeText;
+
         if (!saleStack.isEmpty()) {
             Identifier saleId = BuiltInRegistries.ITEM.getKey(saleStack.getItem());
             int saleCount = saleStack.getCount();
-            String saleName = saleId.getPath();
-            generatedTradeText = priceCount + " " + priceName + " -> " + saleCount + " " + saleName;
+            generatedTradeText = pricesText + " -> " + saleCount + " " + saleId.getPath();
         } else {
-            generatedTradeText = priceCount + " " + priceName;
+            generatedTradeText = pricesText;
         }
 
         // Create the paper
@@ -172,9 +237,14 @@ public class ShopCreationMenu extends ChestMenu {
         List<Component> lore = new ArrayList<>();
         lore.add(Component.literal("§7§m------------------------"));
         lore.add(Component.literal("§6Chest Shop Config Paper"));
-        lore.add(Component.literal("§7Price: §b" + priceCount + "x " + priceStack.getHoverName().getString()));
+        for (int i = 0; i < priceStacks.size(); i++) {
+            ItemStack ps = priceStacks.get(i);
+            lore.add(Component.literal("§7Price " + (i + 1) + ": §b" + ps.getCount() + "x ")
+                    .append(ChestShopManager.getItemComponent(ps.getItem()).copy().withStyle(net.minecraft.ChatFormatting.AQUA)));
+        }
         if (!saleStack.isEmpty()) {
-            lore.add(Component.literal("§7Selling: §f" + saleStack.getCount() + "x " + saleStack.getHoverName().getString()));
+            lore.add(Component.literal("§7Selling: §f" + saleStack.getCount() + "x ")
+                    .append(ChestShopManager.getItemComponent(saleStack.getItem()).copy().withStyle(net.minecraft.ChatFormatting.WHITE)));
         } else {
             lore.add(Component.literal("§7Selling: §f[Any Chest Items]"));
         }
@@ -183,17 +253,20 @@ public class ShopCreationMenu extends ChestMenu {
         paper.set(DataComponents.LORE, new ItemLore(lore));
 
         // Return placed sample items
-        ItemStack refundPrice = priceStack.copy();
+        ItemStack refundP1 = p1.copy();
+        ItemStack refundP2 = p2.copy();
+        ItemStack refundP3 = p3.copy();
         ItemStack refundSale = saleStack.copy();
-        getContainer().setItem(PRICE_SLOT, ItemStack.EMPTY);
+
+        getContainer().setItem(PRICE_1_SLOT, ItemStack.EMPTY);
+        getContainer().setItem(PRICE_2_SLOT, ItemStack.EMPTY);
+        getContainer().setItem(PRICE_3_SLOT, ItemStack.EMPTY);
         getContainer().setItem(SALE_SLOT, ItemStack.EMPTY);
 
-        if (!refundPrice.isEmpty()) {
-            player.getInventory().placeItemBackInInventory(refundPrice, Prediction.SERVER_ONLY);
-        }
-        if (!refundSale.isEmpty()) {
-            player.getInventory().placeItemBackInInventory(refundSale, Prediction.SERVER_ONLY);
-        }
+        if (!refundP1.isEmpty()) player.getInventory().placeItemBackInInventory(refundP1, Prediction.SERVER_ONLY);
+        if (!refundP2.isEmpty()) player.getInventory().placeItemBackInInventory(refundP2, Prediction.SERVER_ONLY);
+        if (!refundP3.isEmpty()) player.getInventory().placeItemBackInInventory(refundP3, Prediction.SERVER_ONLY);
+        if (!refundSale.isEmpty()) player.getInventory().placeItemBackInInventory(refundSale, Prediction.SERVER_ONLY);
 
         // Give paper
         if (!player.getInventory().add(paper)) {
@@ -219,16 +292,14 @@ public class ShopCreationMenu extends ChestMenu {
     @Override
     public void removed(Player player) {
         super.removed(player);
-        // Safely refund any items in the price or sale slot when closed
-        ItemStack price = getContainer().getItem(PRICE_SLOT);
-        if (!price.isEmpty()) {
-            player.getInventory().placeItemBackInInventory(price, Prediction.SERVER_ONLY);
-            getContainer().setItem(PRICE_SLOT, ItemStack.EMPTY);
-        }
-        ItemStack sale = getContainer().getItem(SALE_SLOT);
-        if (!sale.isEmpty()) {
-            player.getInventory().placeItemBackInInventory(sale, Prediction.SERVER_ONLY);
-            getContainer().setItem(SALE_SLOT, ItemStack.EMPTY);
+        // Safely refund any items in editable slots when closed
+        int[] editable = {PRICE_1_SLOT, PRICE_2_SLOT, PRICE_3_SLOT, SALE_SLOT};
+        for (int s : editable) {
+            ItemStack st = getContainer().getItem(s);
+            if (!st.isEmpty()) {
+                player.getInventory().placeItemBackInInventory(st, Prediction.SERVER_ONLY);
+                getContainer().setItem(s, ItemStack.EMPTY);
+            }
         }
     }
 

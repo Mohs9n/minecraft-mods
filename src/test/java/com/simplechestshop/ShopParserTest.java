@@ -78,4 +78,55 @@ public class ShopParserTest {
         ShopTrade trade = ShopParser.parseTrade("1 imaginary_item_xyz -> 16 oak_log");
         assertFalse(trade.isValid(), "Trade should be invalid if item doesn't exist");
     }
+
+    @Test
+    public void testMultiPriceOrFormat() {
+        java.util.List<ShopTrade> trades = ShopParser.parseTrades("1 diamond or 10 iron_ingot -> 64 cooked_beef");
+        assertEquals(2, trades.size(), "Should parse 2 alternative trades");
+
+        ShopTrade trade1 = trades.get(0);
+        assertTrue(trade1.isValid());
+        assertEquals(Items.DIAMOND, trade1.getPriceItem());
+        assertEquals(1, trade1.getPriceCount());
+        assertEquals(Items.COOKED_BEEF, trade1.getSaleItem());
+        assertEquals(64, trade1.getSaleCount());
+
+        ShopTrade trade2 = trades.get(1);
+        assertTrue(trade2.isValid());
+        assertEquals(Items.IRON_INGOT, trade2.getPriceItem());
+        assertEquals(10, trade2.getPriceCount());
+        assertEquals(Items.COOKED_BEEF, trade2.getSaleItem());
+        assertEquals(64, trade2.getSaleCount());
+    }
+
+    @Test
+    public void testMultiPriceSlashAndPipeFormat() {
+        java.util.List<ShopTrade> slashTrades = ShopParser.parseTrades("1 diamond / 10 iron_ingot -> 64 cooked_beef");
+        assertEquals(2, slashTrades.size());
+        assertEquals(Items.DIAMOND, slashTrades.get(0).getPriceItem());
+        assertEquals(Items.IRON_INGOT, slashTrades.get(1).getPriceItem());
+
+        java.util.List<ShopTrade> pipeTrades = ShopParser.parseTrades("1 diamond | 10 iron_ingot | 32 coal -> 64 cooked_beef");
+        assertEquals(3, pipeTrades.size());
+        assertEquals(Items.DIAMOND, pipeTrades.get(0).getPriceItem());
+        assertEquals(Items.IRON_INGOT, pipeTrades.get(1).getPriceItem());
+        assertEquals(Items.COAL, pipeTrades.get(2).getPriceItem());
+        assertEquals(32, pipeTrades.get(2).getPriceCount());
+        assertEquals(Items.COOKED_BEEF, pipeTrades.get(2).getSaleItem());
+        assertEquals(64, pipeTrades.get(2).getSaleCount());
+    }
+
+    @Test
+    public void testMultiPriceForFormat() {
+        java.util.List<ShopTrade> trades = ShopParser.parseTrades("64 cooked_beef for 1 diamond or 10 iron_ingot");
+        assertEquals(2, trades.size());
+        assertEquals(Items.DIAMOND, trades.get(0).getPriceItem());
+        assertEquals(1, trades.get(0).getPriceCount());
+        assertEquals(Items.IRON_INGOT, trades.get(1).getPriceItem());
+        assertEquals(10, trades.get(1).getPriceCount());
+        assertEquals(Items.COOKED_BEEF, trades.get(0).getSaleItem());
+        assertEquals(64, trades.get(0).getSaleCount());
+        assertEquals(Items.COOKED_BEEF, trades.get(1).getSaleItem());
+        assertEquals(64, trades.get(1).getSaleCount());
+    }
 }

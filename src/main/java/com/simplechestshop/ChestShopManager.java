@@ -7,6 +7,8 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.Container;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -24,12 +26,13 @@ import java.util.UUID;
 public class ChestShopManager {
 
     /**
-     * Checks if a block at pos is a chest with a valid shop configuration paper.
+     * Retrieves all valid shop trades from any papers or config items in the chest.
      */
-    public static ShopTrade getShopTrade(Level level, BlockPos pos) {
+    public static java.util.List<ShopTrade> getAllShopTrades(Level level, BlockPos pos) {
+        java.util.List<ShopTrade> trades = new java.util.ArrayList<>();
         Container container = getChestContainer(level, pos);
         if (container == null) {
-            return null;
+            return trades;
         }
 
         for (int i = 0; i < container.getContainerSize(); i++) {
@@ -37,14 +40,24 @@ public class ChestShopManager {
             if (ShopParser.isShopConfigItem(stack)) {
                 Component customName = stack.get(DataComponents.CUSTOM_NAME);
                 if (customName != null) {
-                    ShopTrade trade = ShopParser.parseTrade(customName.getString());
-                    if (trade.isValid()) {
-                        return trade;
+                    java.util.List<ShopTrade> parsed = ShopParser.parseTrades(customName.getString());
+                    for (ShopTrade t : parsed) {
+                        if (t.isValid()) {
+                            trades.add(t);
+                        }
                     }
                 }
             }
         }
-        return null;
+        return trades;
+    }
+
+    /**
+     * Checks if a block at pos is a chest with a valid shop configuration paper.
+     */
+    public static ShopTrade getShopTrade(Level level, BlockPos pos) {
+        java.util.List<ShopTrade> trades = getAllShopTrades(level, pos);
+        return trades.isEmpty() ? null : trades.get(0);
     }
 
     /**
@@ -103,24 +116,39 @@ public class ChestShopManager {
     }
 
     /**
-     * Shows shop trade information to a player.
+     * Shows all shop trade information to a player.
      */
-    public static void showShopInfo(Player player, ShopTrade trade, Container container, String ownerName) {
-        int stock = getStockCount(container, trade);
-        String saleName = trade.getSaleItem() != null
-                ? trade.getSaleCount() + "x " + getItemDisplayName(trade.getSaleItem())
-                : "1x [Chest Contents]";
-        String priceName = trade.getPriceCount() + "x " + getItemDisplayName(trade.getPriceItem());
+    public static void showShopInfo(Player player, java.util.List<ShopTrade> trades, Container container, String ownerName) {
+        if (trades == null || trades.isEmpty()) return;
 
         player.sendSystemMessage(Component.literal("§6================ §e[Chest Shop] §6================"));
-        player.sendSystemMessage(Component.literal("§7Item: §f" + saleName));
-        player.sendSystemMessage(Component.literal("§7Price: §b" + priceName));
-        player.sendSystemMessage(Component.literal("§7Stock: " + (stock >= trade.getSaleCount() ? "§a" + stock : "§cOut of Stock (" + stock + ")")));
         if (ownerName != null && !ownerName.isBlank()) {
             player.sendSystemMessage(Component.literal("§7Owner: §e" + ownerName));
         }
-        player.sendSystemMessage(Component.literal("§eRight-click with §b" + priceName + " §eto buy!"));
+        player.sendSystemMessage(Component.literal("§7Available Trades / Prices:"));
+        for (ShopTrade trade : trades) {
+            Item actualSale = getActualSaleItem(container, trade);
+            int stock = getStockCount(container, trade);
+            Component saleComp = actualSale != null
+                    ? Component.literal(trade.getSaleCount() + "x ").append(getItemComponent(actualSale).copy().withStyle(net.minecraft.ChatFormatting.WHITE))
+                    : Component.literal("1x [Chest Contents]");
+            Component priceComp = Component.literal(trade.getPriceCount() + "x ").append(getItemComponent(trade.getPriceItem()).copy().withStyle(net.minecraft.ChatFormatting.AQUA));
+            String stockStr = stock >= trade.getSaleCount() ? "§a" + stock + " in stock" : "§cOut of Stock (" + stock + ")";
+
+            player.sendSystemMessage(Component.literal(" §8• ").append(saleComp)
+                    .append(Component.literal(" §7for ")).append(priceComp)
+                    .append(Component.literal(" §8(" + stockStr + "§8)")));
+        }
+        player.sendSystemMessage(Component.literal("§eRight-click chest to open the Buy Menu!"));
         player.sendSystemMessage(Component.literal("§6============================================"));
+    }
+
+    /**
+     * Shows single shop trade information to a player.
+     */
+    public static void showShopInfo(Player player, ShopTrade trade, Container container, String ownerName) {
+        if (trade == null) return;
+        showShopInfo(player, java.util.List.of(trade), container, ownerName);
     }
 
     /**
@@ -136,24 +164,35 @@ public class ChestShopManager {
             return InteractionResult.PASS;
         }
 
-        ShopTrade trade = getShopTrade(level, pos);
-        if (trade == null || !trade.isValid()) {
+        java.util.List<ShopTrade> trades = getAllShopTrades(level, pos);
+        if (trades.isEmpty()) {
             return InteractionResult.PASS;
         }
 
         ItemStack held = player.getItemInHand(hand);
+        ShopTrade matchedTrade = null;
+        for (ShopTrade t : trades) {
+            if (t.matchesPayment(held)) {
+                matchedTrade = t;
+                break;
+            }
+        }
 
-        // If player is NOT holding the exact payment, show shop info and prevent opening
-        if (!trade.matchesPayment(held)) {
-            showShopInfo(player, trade, container, null);
+        ChestShopData.ShopRecord record = ChestShopData.getRecord(pos);
+        String ownerName = record != null ? record.ownerName : "Unknown";
+
+        // If player is NOT holding matching payment for any trade, show shop info and return
+        if (matchedTrade == null) {
+            showShopInfo(player, trades, container, ownerName);
             return InteractionResult.SUCCESS;
         }
 
+        ShopTrade trade = matchedTrade;
         int stock = getStockCount(container, trade);
         int requiredSaleCount = trade.getSaleCount();
 
         if (stock < requiredSaleCount) {
-            player.sendSystemMessage(Component.literal("§c[Chest Shop] This shop is currently out of stock!"));
+            player.sendSystemMessage(Component.literal("§c[Chest Shop] This trade is currently out of stock!"));
             level.playSound(null, pos, SoundEvents.VILLAGER_NO, SoundSource.BLOCKS, 1.0f, 1.0f);
             return InteractionResult.SUCCESS;
         }
@@ -165,36 +204,14 @@ public class ChestShopManager {
             return InteractionResult.SUCCESS;
         }
 
-        // Verify which item to take from chest if saleItem is dynamic
-        Item toGiveItem = trade.getSaleItem();
-        if (toGiveItem == null) {
-            for (int i = 0; i < container.getContainerSize(); i++) {
-                ItemStack st = container.getItem(i);
-                if (!st.isEmpty() && !ShopParser.isShopConfigItem(st)) {
-                    toGiveItem = st.getItem();
-                    break;
-                }
-            }
-        }
-
+        Item toGiveItem = getActualSaleItem(container, trade);
         if (toGiveItem == null) {
             player.sendSystemMessage(Component.literal("§c[Chest Shop] Shop is out of stock!"));
             return InteractionResult.SUCCESS;
         }
 
         // 1. Remove sale items from chest
-        int remainingToRemove = requiredSaleCount;
-        for (int i = 0; i < container.getContainerSize(); i++) {
-            ItemStack st = container.getItem(i);
-            if (ShopParser.isShopConfigItem(st)) continue;
-
-            if (st.getItem() == toGiveItem) {
-                int take = Math.min(st.getCount(), remainingToRemove);
-                st.shrink(take);
-                remainingToRemove -= take;
-                if (remainingToRemove <= 0) break;
-            }
-        }
+        removeSaleItems(container, toGiveItem, requiredSaleCount);
 
         // 2. Deposit payment into chest
         storeItem(container, paymentStack);
@@ -212,9 +229,12 @@ public class ChestShopManager {
 
         // Audio & Visual feedback
         level.playSound(null, pos, SoundEvents.NOTE_BLOCK_CHIME.value(), SoundSource.BLOCKS, 1.0f, 1.5f);
-        player.sendSystemMessage(Component.literal("§a✔ Purchased " + requiredSaleCount + "x "
-                + getItemDisplayName(toGiveItem) + " for "
-                + trade.getPriceCount() + "x " + getItemDisplayName(trade.getPriceItem()) + "!"));
+        Component successMsg = Component.literal("§a✔ Purchased " + requiredSaleCount + "x ")
+                .append(getItemComponent(toGiveItem).copy().withStyle(net.minecraft.ChatFormatting.GREEN))
+                .append(Component.literal("§a for " + trade.getPriceCount() + "x "))
+                .append(getItemComponent(trade.getPriceItem()).copy().withStyle(net.minecraft.ChatFormatting.AQUA))
+                .append(Component.literal("§a!"));
+        player.sendSystemMessage(successMsg);
 
         return InteractionResult.SUCCESS;
     }
@@ -317,8 +337,28 @@ public class ChestShopManager {
         return remaining <= 0;
     }
 
-    public static String getItemDisplayName(Item item) {
+    public static Component getItemComponent(Item item) {
+        if (item == null) return Component.literal("Unknown");
+        String fallback = getHumanReadableName(item);
+        return Component.translatableWithFallback(item.getDescriptionId(), fallback);
+    }
+
+    public static String getHumanReadableName(Item item) {
         if (item == null) return "Unknown";
-        return item.getName(ItemStack.EMPTY).getString();
+        Identifier id = BuiltInRegistries.ITEM.getKey(item);
+        if (id == null) return item.toString();
+        String path = id.getPath().replace('_', ' ');
+        String[] parts = path.split(" ");
+        StringBuilder sb = new StringBuilder();
+        for (String part : parts) {
+            if (!part.isEmpty()) {
+                sb.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1)).append(" ");
+            }
+        }
+        return sb.toString().trim();
+    }
+
+    public static String getItemDisplayName(Item item) {
+        return getHumanReadableName(item);
     }
 }
