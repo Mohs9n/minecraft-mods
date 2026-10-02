@@ -32,6 +32,7 @@ public class ClaimDetailMenu extends ChestMenu {
     private static final int INFO_SLOT = 4;
     private static final int ADD_TRUSTED_SLOT = 38;
     private static final int DELETE_SLOT = 40;
+    private static final int FORCELOAD_SLOT = 42;
     private static final int BACK_SLOT = 45;
     private static final int MEMBER_START = 9;
     private static final int MEMBER_END = 35; // inclusive: 27 slots for members/candidates
@@ -97,6 +98,16 @@ public class ClaimDetailMenu extends ChestMenu {
                     deleteArmed ? Items.TNT : Items.BARRIER,
                     Component.literal(deleteArmed ? "§c§lCLICK AGAIN TO CONFIRM DELETE" : "§c§lDelete Claim"),
                     List.of(Component.literal("§7This cannot be undone!"))
+            ));
+
+            getContainer().setItem(FORCELOAD_SLOT, ClaimListMenu.createGuiItem(
+                    c.isForceLoaded() ? Items.GLOWSTONE_DUST : Items.COAL,
+                    Component.literal(c.isForceLoaded() ? "§a§lForce-Loaded: ON" : "§7Force-Loaded: OFF"),
+                    List.of(
+                            Component.literal("§7Keeps this claim's chunks ticking"),
+                            Component.literal("§7even while you're offline."),
+                            Component.literal("§eClick to toggle")
+                    )
             ));
         }
 
@@ -188,6 +199,13 @@ public class ClaimDetailMenu extends ChestMenu {
             return;
         }
 
+        if (slotIndex == FORCELOAD_SLOT) {
+            toggleForceLoad(player, c);
+            render(player);
+            sendAllDataToRemote();
+            return;
+        }
+
         if (slotIndex == DELETE_SLOT) {
             if (!deleteArmed) {
                 deleteArmed = true;
@@ -245,6 +263,32 @@ public class ClaimDetailMenu extends ChestMenu {
 
         deleteArmed = false;
         sendAllDataToRemote();
+    }
+
+    private void toggleForceLoad(Player player, Claim c) {
+        if (!(player.level() instanceof ServerLevel sLevel)) return;
+
+        if (c.isForceLoaded()) {
+            c.setForceLoaded(false);
+            ClaimManager.applyForceLoad(sLevel, c, false);
+            ClaimManager.save(sLevel);
+            player.sendSystemMessage(Component.literal("§e✔ §6" + c.getName() + " §eis no longer force-loaded."));
+            return;
+        }
+
+        long chunksNeeded = ((long) (c.getMaxX() >> 4) - (c.getMinX() >> 4) + 1)
+                * ((long) (c.getMaxZ() >> 4) - (c.getMinZ() >> 4) + 1);
+        long alreadyForced = ClaimManager.countForceLoadedChunks(player.getUUID());
+        if (!ClaimManager.isOpOrAdmin(player) && alreadyForced + chunksNeeded > ClaimManager.MAX_FORCELOADED_CHUNKS_PER_PLAYER) {
+            player.sendSystemMessage(Component.literal("§c[SimpleClaims] That would force-load " + chunksNeeded + " chunks, but you can only force-load "
+                    + ClaimManager.MAX_FORCELOADED_CHUNKS_PER_PLAYER + " total (currently using " + alreadyForced + ")!"));
+            return;
+        }
+
+        c.setForceLoaded(true);
+        ClaimManager.applyForceLoad(sLevel, c, true);
+        ClaimManager.save(sLevel);
+        player.sendSystemMessage(Component.literal("§a✔ §6" + c.getName() + " §awill now stay loaded even while you're offline!"));
     }
 
     @Override

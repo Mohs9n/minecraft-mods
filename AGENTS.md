@@ -136,6 +136,24 @@ com.simpleclaims
     └── PistonBaseBlockMixin.java     # Cancels push/pull through a claim border
 ```
 
+### Ideas Adopted from FTB Chunks
+After researching FTB Chunks (a well-known chunk-claiming + force-loading mod), three of
+its core ideas were ported in:
+- **Per-player claim limits** (`ClaimManager.MAX_CLAIMS_PER_PLAYER` / `MAX_TOTAL_CLAIM_AREA_PER_PLAYER`,
+  checked in `ClaimCommands.createClaimInternal`) - stops one player from claiming the whole
+  map. Ops are exempt.
+- **Explicit admin bypass toggle** (`/claim adminbypass`, `ClaimManager.isAdminBypassActive`)
+  - mirrors FTB Chunks' `bypass_protection` command. An op no longer silently ignores claim
+  protection just by having op status (that caused accidental grief while just playing
+  normally); they must deliberately toggle it on, and it resets on disconnect.
+- **Chunk force-loading** (`/claim forceload`, or the toggle button in the claim management
+  GUI) - keeps a claim's chunks ticking via vanilla's own `ServerLevel#setChunkForced` (the
+  same mechanism behind `/forceload`) even while the owner is offline, capped per-player by
+  `ClaimManager.MAX_FORCELOADED_CHUNKS_PER_PLAYER` to protect server performance.
+
+Not adopted: FTB Chunks' map/minimap and FTB Teams integration are out of scope for this
+mod - our existing per-claim trust list already covers multi-player sharing.
+
 ### Performance & Hardening Notes
 - `ClaimManager` keeps a per-dimension chunk-bucket index (`chunkKey = (chunkX << 32) | chunkZ`)
   so `getClaimAt`/`findOverlappingClaim` only scan claims touching the relevant chunk(s)

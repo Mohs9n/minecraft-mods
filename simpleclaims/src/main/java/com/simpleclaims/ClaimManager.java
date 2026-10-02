@@ -2,7 +2,11 @@ package com.simpleclaims;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
@@ -235,6 +239,9 @@ public class ClaimManager {
         if (claim == null) return false;
         boolean removed = (CLAIMS.remove(claim.getId()) != null);
         if (removed) {
+            if (claim.isForceLoaded()) {
+                applyForceLoad(level, claim, false);
+            }
             unindexClaim(claim);
             save(level);
         }
@@ -258,6 +265,32 @@ public class ClaimManager {
         return false;
     }
 
+    // Inspired by FTB Chunks' explicit "bypass_protection" toggle: an op doesn't silently
+    // ignore claim protection just by having op status (that's how admins accidentally grief
+    // builds while just playing normally). They have to deliberately turn bypass on with
+    // /claim adminbypass, and it resets on disconnect so it's never left on by accident.
+    // This only gates the PASSIVE world-interaction bypass (build/break/interact/damage) -
+    // deliberate admin actions like GUI/command claim deletion still just check isOpOrAdmin.
+    private static final Set<UUID> ADMIN_BYPASS_ENABLED = new HashSet<>();
+
+    public static boolean isAdminBypassActive(Player player) {
+        return player != null && isOpOrAdmin(player) && ADMIN_BYPASS_ENABLED.contains(player.getUUID());
+    }
+
+    /**
+     * Toggles the calling op's admin bypass. Returns the new state, or null if the player
+     * isn't actually an operator (callers should reject the request in that case).
+     */
+    public static Boolean toggleAdminBypass(Player player) {
+        if (player == null || !isOpOrAdmin(player)) return null;
+        UUID uuid = player.getUUID();
+        if (ADMIN_BYPASS_ENABLED.remove(uuid)) {
+            return false;
+        }
+        ADMIN_BYPASS_ENABLED.add(uuid);
+        return true;
+    }
+
     public static boolean canPlayerModify(Player player, Level level, BlockPos pos) {
         Claim claim = getClaimAt(level, pos);
         if (claim == null) {
@@ -266,8 +299,8 @@ public class ClaimManager {
         if (player == null) {
             return false;
         }
-        if (isOpOrAdmin(player)) {
-            return true; // Admin / Operator bypass
+        if (isAdminBypassActive(player)) {
+            return true; // Admin bypass explicitly enabled
         }
         return claim.canAccess(player);
     }
@@ -305,7 +338,7 @@ public class ClaimManager {
         if (player == null) {
             return false;
         }
-        if (isOpOrAdmin(player)) {
+        if (isAdminBypassActive(player)) {
             return true;
         }
         if (!isProtectedEntityType(target)) {
@@ -396,5 +429,101 @@ public class ClaimManager {
         PENDING_CLAIM_STATE.remove(uuid);
         PENDING_CLAIM_TICKS.remove(uuid);
         SELECTIONS.remove(uuid);
+        ADMIN_BYPASS_ENABLED.remove(uuid);
+    }
+
+    // --- Claim Limits (inspired by FTB Chunks' claim-power system) ---
+
+    // How much land one player can own at once. Prevents a single player from claiming the
+    // whole map. Server operators are exempt (checked separately by callers via isOpOrAdmin).
+    public static final int MAX_CLAIMS_PER_PLAYER = 10;
+    public static final long MAX_TOTAL_CLAIM_AREA_PER_PLAYER = 50_000L;
+
+    public static final class ClaimLimitCheck {
+        public final boolean allowed;
+        public final int ownedClaims;
+        public final long ownedArea;
+        public final String reason;
+
+        private ClaimLimitCheck(boolean allowed, int ownedClaims, long ownedArea, String reason) {
+            this.allowed = allowed;
+            this.ownedClaims = ownedClaims;
+            this.ownedArea = ownedArea;
+            this.reason = reason;
+        }
+    }
+
+    public static ClaimLimitCheck checkClaimLimit(UUID ownerUuid, long additionalArea) {
+        List<Claim> owned = getClaimsByOwner(ownerUuid);
+        long ownedArea = 0L;
+        for (Claim c : owned) {
+            ownedArea += c.getArea();
+        }
+
+        if (owned.size() >= MAX_CLAIMS_PER_PLAYER) {
+            return new ClaimLimitCheck(false, owned.size(), ownedArea,
+                    "You already own the maximum of " + MAX_CLAIMS_PER_PLAYER + " claims!");
+        }
+        if (ownedArea + additionalArea > MAX_TOTAL_CLAIM_AREA_PER_PLAYER) {
+            return new ClaimLimitCheck(false, owned.size(), ownedArea,
+                    "That would put you over your " + MAX_TOTAL_CLAIM_AREA_PER_PLAYER + "-block claim limit (currently using "
+                            + ownedArea + ")!");
+        }
+        return new ClaimLimitCheck(true, owned.size(), ownedArea, null);
+    }
+
+    // --- Force-Loading (inspired by FTB Chunks' chunk force-loading) ---
+
+    // Keeps a small server up without someone force-loading the whole map and tanking TPS.
+    public static final int MAX_FORCELOADED_CHUNKS_PER_PLAYER = 16;
+
+    public static long countForceLoadedChunks(UUID ownerUuid) {
+        long total = 0;
+        for (Claim c : getClaimsByOwner(ownerUuid)) {
+            if (c.isForceLoaded()) {
+                total += chunkCount(c);
+            }
+        }
+        return total;
+    }
+
+    private static long chunkCount(Claim c) {
+        long chunksX = (long) (c.getMaxX() >> 4) - (c.getMinX() >> 4) + 1;
+        long chunksZ = (long) (c.getMaxZ() >> 4) - (c.getMinZ() >> 4) + 1;
+        return chunksX * chunksZ;
+    }
+
+    /**
+     * Applies or removes vanilla chunk-force-loading (ServerLevel#setChunkForced, the same
+     * mechanism behind the vanilla /forceload command) for every chunk a claim spans.
+     */
+    public static void applyForceLoad(ServerLevel level, Claim claim, boolean forced) {
+        if (level == null || claim == null) return;
+        int minCx = claim.getMinX() >> 4, maxCx = claim.getMaxX() >> 4;
+        int minCz = claim.getMinZ() >> 4, maxCz = claim.getMaxZ() >> 4;
+        for (int cx = minCx; cx <= maxCx; cx++) {
+            for (int cz = minCz; cz <= maxCz; cz++) {
+                level.setChunkForced(cx, cz, forced);
+            }
+        }
+    }
+
+    /**
+     * Re-applies force-loading for every force-loaded claim on server start, resolving each
+     * claim's own dimension rather than assuming the overworld (a claim can exist in the
+     * Nether or End too). Vanilla already persists forced chunks on its own, but this keeps
+     * our per-claim bookkeeping and the world's actual forced-chunk set guaranteed to agree
+     * after a claim is created/edited/deleted or the save file is hand-edited.
+     */
+    public static synchronized void reapplyForceLoading(MinecraftServer server) {
+        for (Claim c : CLAIMS.values()) {
+            if (!c.isForceLoaded()) continue;
+            Identifier id = Identifier.tryParse(c.getDimension());
+            if (id == null) continue;
+            ServerLevel level = server.getLevel(ResourceKey.create(Registries.DIMENSION, id));
+            if (level != null) {
+                applyForceLoad(level, c, true);
+            }
+        }
     }
 }

@@ -130,6 +130,16 @@ public class ClaimCommands {
                             ServerPlayer player = ctx.getSource().getPlayerOrException();
                             return handleDelete(player);
                         }))
+                .then(Commands.literal("forceload")
+                        .executes(ctx -> {
+                            ServerPlayer player = ctx.getSource().getPlayerOrException();
+                            return handleToggleForceLoad(player);
+                        }))
+                .then(Commands.literal("adminbypass")
+                        .executes(ctx -> {
+                            ServerPlayer player = ctx.getSource().getPlayerOrException();
+                            return handleToggleAdminBypass(player);
+                        }))
         );
     }
 
@@ -145,6 +155,10 @@ public class ClaimCommands {
         player.sendSystemMessage(Component.literal("§e/claim list §7- Lists all your claims"));
         player.sendSystemMessage(Component.literal("§e/claim info §7- Shows info of claim you are standing in"));
         player.sendSystemMessage(Component.literal("§e/claim delete §7- Deletes the claim you are standing in"));
+        player.sendSystemMessage(Component.literal("§e/claim forceload §7- Toggles keeping the claim loaded while offline"));
+        if (ClaimManager.isOpOrAdmin(player)) {
+            player.sendSystemMessage(Component.literal("§e/claim adminbypass §7- (Op) Toggles ignoring claim protection"));
+        }
         player.sendSystemMessage(Component.literal("§6==================================================="));
         return 1;
     }
@@ -205,6 +219,17 @@ public class ClaimCommands {
         if (overlap != null) {
             player.sendSystemMessage(Component.literal("§c[SimpleClaims] Cannot create claim: Overlaps with §e" + overlap.getOwnerName() + "§c's claim (§f" + overlap.getName() + "§c)!"));
             return 0;
+        }
+
+        // Per-player claim limits (skipped for ops), inspired by FTB Chunks' claim-power
+        // system - stops a single player from claiming the whole map.
+        long area = (long) widthX * widthZ;
+        if (!ClaimManager.isOpOrAdmin(player)) {
+            ClaimManager.ClaimLimitCheck limit = ClaimManager.checkClaimLimit(player.getUUID(), area);
+            if (!limit.allowed) {
+                player.sendSystemMessage(Component.literal("§c[SimpleClaims] " + limit.reason));
+                return 0;
+            }
         }
 
         Claim claim = new Claim(null, name, dim, minX, minZ, maxX, maxZ, player.getUUID(), player.getName().getString());
@@ -336,6 +361,57 @@ public class ClaimCommands {
             player.sendSystemMessage(Component.literal("§c[SimpleClaims] Failed to delete claim."));
             return 0;
         }
+    }
+
+    private static int handleToggleForceLoad(ServerPlayer player) {
+        Claim claim = ClaimManager.getClaimAt(player.level(), player.blockPosition());
+        if (claim == null) {
+            player.sendSystemMessage(Component.literal("§c[SimpleClaims] You must be standing in the claim you want to force-load!"));
+            return 0;
+        }
+
+        if (!claim.isOwner(player.getUUID(), player.getName().getString()) && !ClaimManager.isOpOrAdmin(player)) {
+            player.sendSystemMessage(Component.literal("§c[SimpleClaims] Only the owner of this claim can toggle force-loading!"));
+            return 0;
+        }
+
+        ServerLevel sLevel = (ServerLevel) player.level();
+        if (claim.isForceLoaded()) {
+            claim.setForceLoaded(false);
+            ClaimManager.applyForceLoad(sLevel, claim, false);
+            ClaimManager.save(sLevel);
+            player.sendSystemMessage(Component.literal("§e✔ §6" + claim.getName() + " §eis no longer force-loaded; it will unload like a normal chunk when everyone leaves."));
+            return 1;
+        }
+
+        long chunksNeeded = ((long) (claim.getMaxX() >> 4) - (claim.getMinX() >> 4) + 1)
+                * ((long) (claim.getMaxZ() >> 4) - (claim.getMinZ() >> 4) + 1);
+        long alreadyForced = ClaimManager.countForceLoadedChunks(player.getUUID());
+        if (!ClaimManager.isOpOrAdmin(player) && alreadyForced + chunksNeeded > ClaimManager.MAX_FORCELOADED_CHUNKS_PER_PLAYER) {
+            player.sendSystemMessage(Component.literal("§c[SimpleClaims] That would force-load " + chunksNeeded + " chunks, but you can only force-load "
+                    + ClaimManager.MAX_FORCELOADED_CHUNKS_PER_PLAYER + " total (currently using " + alreadyForced + ")!"));
+            return 0;
+        }
+
+        claim.setForceLoaded(true);
+        ClaimManager.applyForceLoad(sLevel, claim, true);
+        ClaimManager.save(sLevel);
+        player.sendSystemMessage(Component.literal("§a✔ §6" + claim.getName() + " §awill now stay loaded and keep ticking even while you're offline!"));
+        return 1;
+    }
+
+    private static int handleToggleAdminBypass(ServerPlayer player) {
+        Boolean newState = ClaimManager.toggleAdminBypass(player);
+        if (newState == null) {
+            player.sendSystemMessage(Component.literal("§c[SimpleClaims] Only server operators can use admin bypass."));
+            return 0;
+        }
+        if (newState) {
+            player.sendSystemMessage(Component.literal("§c⚠ Admin bypass §lENABLED§r§c - you now ignore all claim protection. Toggle it off when you're done!"));
+        } else {
+            player.sendSystemMessage(Component.literal("§a✔ Admin bypass disabled - you're subject to claim protection like everyone else again."));
+        }
+        return 1;
     }
 
     private static Claim getRelevantClaim(ServerPlayer player) {

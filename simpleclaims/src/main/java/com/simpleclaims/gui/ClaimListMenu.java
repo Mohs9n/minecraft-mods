@@ -109,10 +109,20 @@ public class ClaimListMenu extends ChestMenu {
             ));
         }
 
+        long ownedArea = 0L;
+        for (Claim c : claims) {
+            ownedArea += c.getArea();
+        }
+        List<Component> footerLore = new ArrayList<>();
+        footerLore.add(Component.literal("§7Claims: §f" + claims.size() + " §7/ §f" + ClaimManager.MAX_CLAIMS_PER_PLAYER));
+        footerLore.add(Component.literal("§7Area: §f" + ownedArea + " §7/ §f" + ClaimManager.MAX_TOTAL_CLAIM_AREA_PER_PLAYER + " blocks"));
+        if (claims.size() > MAX_SHOWN) {
+            footerLore.add(Component.literal("§8Only the first " + MAX_SHOWN + " are shown here."));
+        }
         getContainer().setItem(FOOTER_SLOT, createGuiItem(
                 Items.WRITABLE_BOOK,
                 Component.literal("§7You own §e" + claims.size() + " §7claim(s)"),
-                claims.size() > MAX_SHOWN ? List.of(Component.literal("§8Only the first " + MAX_SHOWN + " are shown here.")) : null
+                footerLore
         ));
 
         getContainer().setItem(HELP_SLOT, createGuiItem(

@@ -28,6 +28,7 @@ public class SimpleClaimsMod implements ModInitializer {
         // Load saved claims on server start
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             ClaimManager.load(server.overworld());
+            ClaimManager.reapplyForceLoading(server);
             LOGGER.info("Loaded " + ClaimManager.getAllClaims().size() + " land claims.");
         });
 
