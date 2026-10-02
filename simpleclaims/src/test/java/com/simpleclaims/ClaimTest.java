@@ -58,24 +58,30 @@ public class ClaimTest {
 
         Claim claim = new Claim("test-3", "SharedBase", "minecraft:overworld", 0, 0, 100, 100, owner, "Steve");
 
-        // Owner can access
+        // Owner can access by UUID or by Name
         assertTrue(claim.isOwner(owner));
+        assertTrue(claim.isOwner(UUID.randomUUID(), "Steve")); // Matches by name even with different UUID
         assertTrue(claim.canAccess(owner));
+        assertTrue(claim.canAccess(UUID.randomUUID(), "Steve"));
 
         // Stranger cannot access
         assertFalse(claim.isMember(stranger));
         assertFalse(claim.canAccess(stranger));
+        assertFalse(claim.canAccess(stranger, "Griefer"));
 
         // Friend added to trusted members
         claim.addMember(friend1, "FriendAlex");
         assertTrue(claim.isMember(friend1));
+        assertTrue(claim.isMember(UUID.randomUUID(), "FriendAlex")); // Matches by name
         assertTrue(claim.canAccess(friend1));
+        assertTrue(claim.canAccess(UUID.randomUUID(), "friendalex")); // Case insensitive
         assertFalse(claim.isOwner(friend1));
 
-        // Friend removed
-        assertTrue(claim.removeMember(friend1));
+        // Friend removed by name
+        assertTrue(claim.removeMember("FriendAlex"));
         assertFalse(claim.isMember(friend1));
         assertFalse(claim.canAccess(friend1));
+        assertFalse(claim.canAccess(UUID.randomUUID(), "FriendAlex"));
     }
 
     @Test

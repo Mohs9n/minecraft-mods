@@ -131,7 +131,8 @@ com.simpleclaims
 └── mixin/
     ├── ServerExplosionMixin.java     # Strips claims from explosion blocks and fire
     ├── ExplosionDamageCalculatorMixin.java # Bedrock-grade resistance at claim borders
-    ├── LevelMixin.java               # Cancels Wither destroyBlock & Dragon removeBlock
+    ├── EnderDragonMixin.java         # Redirects dragon checkWalls removeBlock in claims
+    ├── WitherBossMixin.java          # Redirects wither customServerAiStep destroyBlock in claims
     └── PistonBaseBlockMixin.java     # Cancels push/pull through a claim border
 ```
 
@@ -154,8 +155,13 @@ com.simpleclaims
    - `ExplosionDamageCalculatorMixin` returns `Optional.of(3600000.0F)` (Bedrock blast resistance) and `shouldBlockExplode = false`.
    - `ServerExplosionMixin` removes any position within claims from `interactWithBlocks` and `createFire`.
 2. **Boss Protection**:
-   - `LevelMixin.destroyBlock` cancels Wither block eating inside claims.
-   - `LevelMixin.removeBlock` cancels Ender Dragon block deletion inside claims.
+   - `EnderDragonMixin` redirects `checkWalls`'s call to `level.removeBlock`, skipping claim
+     blocks. (Crucial: never inject cancellation directly into `Level.removeBlock`, since
+     vanilla `ServerPlayerGameMode.destroyBlock` calls `Level.removeBlock(pos, false)` for
+     ALL player block mining - cancelling it unconditionally would silently stop owners from
+     ever actually breaking blocks inside their own claim.)
+   - `WitherBossMixin` redirects `customServerAiStep`'s call to `level.destroyBlock`,
+     skipping claim blocks.
 2b. **Piston Protection**:
    - `PistonBaseBlockMixin` cancels `PistonBaseBlock.moveBlocks` (both extend and sticky
      retract) if any block along the push/pull path sits inside a claim, so claimed builds
@@ -165,6 +171,7 @@ com.simpleclaims
    - `UseBlockCallback` prevents block placing, bucket emptying, and container/door/button interactions.
    - `AttackEntityCallback` & `UseEntityCallback` protect animals, villagers, pets, item frames, and armor stands.
 4. **Member Trust System**:
+   - Permissions check both `UUID` and `username` (case-insensitive) to prevent offline-mode, LAN, or name desyncs.
    - Owner can trust multiple friends via `/claim trust <player>`.
    - Members gain immediate full build, break, container, and redstone rights within the claim.
 

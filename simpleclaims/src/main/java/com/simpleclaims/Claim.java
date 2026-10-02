@@ -125,27 +125,84 @@ public class Claim {
     }
 
     public boolean isOwner(UUID uuid) {
-        if (uuid == null || ownerUuid == null) return false;
-        return ownerUuid.equals(uuid.toString());
+        return isOwner(uuid, null);
+    }
+
+    public boolean isOwner(UUID uuid, String name) {
+        if (uuid != null && ownerUuid != null && !ownerUuid.isEmpty()) {
+            if (ownerUuid.equalsIgnoreCase(uuid.toString())) {
+                return true;
+            }
+        }
+        if (name != null && ownerName != null && !ownerName.isEmpty()) {
+            if (ownerName.equalsIgnoreCase(name)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public boolean isMember(UUID uuid) {
-        if (uuid == null) return false;
-        return getMembers().containsKey(uuid.toString());
+        return isMember(uuid, null);
+    }
+
+    public boolean isMember(UUID uuid, String name) {
+        if (uuid != null && getMembers().containsKey(uuid.toString())) {
+            return true;
+        }
+        if (name != null) {
+            for (String memberName : getMembers().values()) {
+                if (name.equalsIgnoreCase(memberName)) {
+                    return true;
+                }
+            }
+            for (String key : getMembers().keySet()) {
+                if (name.equalsIgnoreCase(key)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     public boolean canAccess(UUID uuid) {
-        return isOwner(uuid) || isMember(uuid);
+        return canAccess(uuid, null);
+    }
+
+    public boolean canAccess(UUID uuid, String name) {
+        return isOwner(uuid, name) || isMember(uuid, name);
+    }
+
+    public boolean canAccess(net.minecraft.world.entity.player.Player player) {
+        if (player == null) return false;
+        return canAccess(player.getUUID(), player.getName().getString());
     }
 
     public void addMember(UUID uuid, String name) {
-        if (uuid == null) return;
-        getMembers().put(uuid.toString(), name != null ? name : "Unknown");
+        if (uuid == null && name == null) return;
+        String key = uuid != null ? uuid.toString() : name;
+        getMembers().put(key, name != null ? name : "Unknown");
     }
 
     public boolean removeMember(UUID uuid) {
         if (uuid == null) return false;
         return getMembers().remove(uuid.toString()) != null;
+    }
+
+    public boolean removeMember(String name) {
+        if (name == null || name.isBlank()) return false;
+        String toRemove = null;
+        for (Map.Entry<String, String> entry : getMembers().entrySet()) {
+            if (entry.getValue().equalsIgnoreCase(name) || entry.getKey().equalsIgnoreCase(name)) {
+                toRemove = entry.getKey();
+                break;
+            }
+        }
+        if (toRemove != null) {
+            getMembers().remove(toRemove);
+            return true;
+        }
+        return false;
     }
 
     public int getWidthX() {

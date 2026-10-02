@@ -156,11 +156,18 @@ public class ClaimManager {
     }
 
     public static synchronized List<Claim> getClaimsByOwner(UUID ownerUuid) {
+        return getClaimsByOwner(ownerUuid, null);
+    }
+
+    public static synchronized List<Claim> getClaimsByOwner(Player player) {
+        if (player == null) return new ArrayList<>();
+        return getClaimsByOwner(player.getUUID(), player.getName().getString());
+    }
+
+    public static synchronized List<Claim> getClaimsByOwner(UUID ownerUuid, String ownerName) {
         List<Claim> result = new ArrayList<>();
-        if (ownerUuid == null) return result;
-        String uuidStr = ownerUuid.toString();
         for (Claim c : CLAIMS.values()) {
-            if (uuidStr.equals(c.getOwnerUuid())) {
+            if (c.isOwner(ownerUuid, ownerName)) {
                 result.add(c);
             }
         }
@@ -256,7 +263,7 @@ public class ClaimManager {
         if (isOpOrAdmin(player)) {
             return true; // Admin / Operator bypass
         }
-        return claim.canAccess(player.getUUID());
+        return claim.canAccess(player);
     }
 
     public static boolean canPlayerInteract(Player player, Level level, BlockPos pos) {
@@ -284,7 +291,7 @@ public class ClaimManager {
             return true;
         }
 
-        return claim.canAccess(player.getUUID());
+        return claim.canAccess(player);
     }
 
     // --- Selection Wand / Command Pos Tracking ---
