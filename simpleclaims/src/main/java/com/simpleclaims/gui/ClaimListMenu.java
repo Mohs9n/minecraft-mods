@@ -154,7 +154,7 @@ public class ClaimListMenu extends ChestMenu {
             if (slotIndex == CREATE_SLOT && player instanceof ServerPlayer sp) {
                 String dim = ClaimManager.getDimensionId(player.level());
                 if (ClaimManager.getSelection(player.getUUID(), dim).isComplete()) {
-                    ClaimNameInputMenu.open(sp, (p, name) -> ClaimCommands.createClaimFromSelectionGui(p, name));
+                    ClaimNameDialog.open(sp);
                 }
                 return;
             }

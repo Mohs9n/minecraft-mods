@@ -175,14 +175,6 @@ public class ClaimCommands {
         return 1;
     }
 
-    /**
-     * Entry point for the GUI (ClaimNameInputMenu) to create a claim from the player's
-     * current wand selection without going through the chat/command path.
-     */
-    public static int createClaimFromSelectionGui(ServerPlayer player, String name) {
-        return handleCreateFromSelection(player, name);
-    }
-
     private static int handleCreateFromSelection(ServerPlayer player, String name) {
         String dim = ClaimManager.getDimensionId(player.level());
         ClaimManager.PlayerSelection sel = ClaimManager.getSelection(player.getUUID(), dim);
