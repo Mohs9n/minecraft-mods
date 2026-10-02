@@ -31,6 +31,8 @@ import java.util.UUID;
 
 public class ShopBuyMenu extends ChestMenu {
 
+    private static final int MAX_BULK_BATCHES = 64;
+
     private final Level level;
     private final BlockPos chestPos;
     private final List<ShopTrade> trades;
@@ -180,7 +182,8 @@ public class ShopBuyMenu extends ChestMenu {
                         List.of(
                                 Component.literal("§7Cost: §b" + trade.getPriceCount() + "x ").append(ChestShopManager.getItemComponent(trade.getPriceItem())),
                                 Component.literal("§7Receive: §f" + trade.getSaleCount() + "x ").append(ChestShopManager.getItemComponent(actualSaleItem)),
-                                Component.literal("§eClick here to purchase 1 batch!")
+                                Component.literal("§eClick here to purchase 1 batch!"),
+                                Component.literal("§6Shift-click to bulk buy §7(up to " + MAX_BULK_BATCHES + " batches)!")
                         )
                 );
                 getContainer().setItem(buySlot, buyBtn);
@@ -202,7 +205,11 @@ public class ShopBuyMenu extends ChestMenu {
                 int buySlot = row * 9 + 6;
 
                 if (slotIndex == buySlot) {
-                    handlePurchase(player, trades.get(i));
+                    if (input == ContainerInput.QUICK_MOVE) {
+                        handleBulkPurchase(player, trades.get(i));
+                    } else {
+                        handlePurchase(player, trades.get(i));
+                    }
                     break;
                 }
             }
@@ -295,21 +302,88 @@ public class ShopBuyMenu extends ChestMenu {
         player.sendSystemMessage(purchaseMsg);
 
         // Notify owner if online
-        notifyOwner(player, trade, actualSaleItem);
+        notifyOwner(player, trade, actualSaleItem, trade.getSaleCount(), trade.getPriceCount());
 
         // Update GUI display
         updateGui(player);
     }
 
-    private void notifyOwner(Player buyer, ShopTrade trade, Item saleItem) {
+    /**
+     * Bulk-buy: repeats the single-batch transaction (same checks, same methods) up to
+     * MAX_BULK_BATCHES times or until stock, balance, or chest storage space runs out,
+     * then reports one combined summary instead of spamming a message per batch.
+     */
+    private void handleBulkPurchase(Player player, ShopTrade trade) {
+        Container chestContainer = ChestShopManager.getChestContainer(level, chestPos);
+        if (chestContainer == null) {
+            if (player instanceof ServerPlayer sp) {
+                sp.closeContainer();
+            }
+            return;
+        }
+
+        int batchesBought = 0;
+        int totalSale = 0;
+        int totalPrice = 0;
+        Item actualSaleItem = null;
+
+        for (int i = 0; i < MAX_BULK_BATCHES; i++) {
+            int stock = ChestShopManager.getStockCount(chestContainer, trade);
+            if (stock < trade.getSaleCount()) break;
+
+            int buyerBalance = ChestShopManager.countPlayerItem(player, trade.getPriceItem());
+            if (buyerBalance < trade.getPriceCount()) break;
+
+            ItemStack paymentStack = new ItemStack(trade.getPriceItem(), trade.getPriceCount());
+            if (!ChestShopManager.canStoreItem(chestContainer, paymentStack)) break;
+
+            Item saleItem = ChestShopManager.getActualSaleItem(chestContainer, trade);
+            if (saleItem == null) break;
+
+            if (!ChestShopManager.deductPlayerItem(player, trade.getPriceItem(), trade.getPriceCount())) break;
+
+            ChestShopManager.storeItem(chestContainer, paymentStack);
+            ChestShopManager.removeSaleItems(chestContainer, saleItem, trade.getSaleCount());
+
+            ItemStack boughtStack = new ItemStack(saleItem, trade.getSaleCount());
+            if (!player.getInventory().add(boughtStack)) {
+                player.drop(boughtStack, false, Prediction.SERVER_ONLY);
+            }
+
+            batchesBought++;
+            totalSale += trade.getSaleCount();
+            totalPrice += trade.getPriceCount();
+            actualSaleItem = saleItem;
+        }
+
+        if (batchesBought == 0) {
+            // Nothing could be bought at all - fall back to the single-purchase flow so the
+            // player gets a precise reason (out of stock / can't afford / chest full).
+            handlePurchase(player, trade);
+            return;
+        }
+
+        level.playSound(null, player.blockPosition(), SoundEvents.NOTE_BLOCK_CHIME.value(), SoundSource.PLAYERS, 1.0f, 1.5f);
+        Component bulkMsg = Component.literal("§a✔ Bulk purchased §f" + batchesBought + " batch" + (batchesBought == 1 ? "" : "es") + "§a: " + totalSale + "x ")
+                .append(ChestShopManager.getItemComponent(actualSaleItem).copy().withStyle(net.minecraft.ChatFormatting.GREEN))
+                .append(Component.literal("§a for " + totalPrice + "x "))
+                .append(ChestShopManager.getItemComponent(trade.getPriceItem()).copy().withStyle(net.minecraft.ChatFormatting.AQUA))
+                .append(Component.literal("§a!"));
+        player.sendSystemMessage(bulkMsg);
+
+        notifyOwner(player, trade, actualSaleItem, totalSale, totalPrice);
+        updateGui(player);
+    }
+
+    private void notifyOwner(Player buyer, ShopTrade trade, Item saleItem, int saleCount, int priceCount) {
         if (ownerUuid == null || ownerUuid.isBlank() || level.getServer() == null) return;
         try {
             UUID uuid = UUID.fromString(ownerUuid);
             ServerPlayer ownerPlayer = level.getServer().getPlayerList().getPlayer(uuid);
             if (ownerPlayer != null && ownerPlayer.isAlive()) {
-                Component notifyMsg = Component.literal("§e[Shop] " + buyer.getName().getString() + " bought " + trade.getSaleCount() + "x ")
+                Component notifyMsg = Component.literal("§e[Shop] " + buyer.getName().getString() + " bought " + saleCount + "x ")
                         .append(ChestShopManager.getItemComponent(saleItem).copy().withStyle(net.minecraft.ChatFormatting.YELLOW))
-                        .append(Component.literal(" for " + trade.getPriceCount() + "x "))
+                        .append(Component.literal(" for " + priceCount + "x "))
                         .append(ChestShopManager.getItemComponent(trade.getPriceItem()).copy().withStyle(net.minecraft.ChatFormatting.AQUA))
                         .append(Component.literal(" at (" + chestPos.getX() + ", " + chestPos.getY() + ", " + chestPos.getZ() + ")!"));
                 ownerPlayer.sendSystemMessage(notifyMsg);

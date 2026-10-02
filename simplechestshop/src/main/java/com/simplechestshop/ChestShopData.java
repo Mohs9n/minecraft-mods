@@ -15,6 +15,7 @@ import java.io.Writer;
 import java.lang.reflect.Type;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -28,6 +29,7 @@ public class ChestShopData {
         public String ownerUuid;
         public String ownerName;
         public long createdAt;
+        public Map<String, String> trusted; // UUID string -> player name; co-managers of this shop
 
         public ShopRecord() {}
 
@@ -35,6 +37,16 @@ public class ChestShopData {
             this.ownerUuid = ownerUuid != null ? ownerUuid.toString() : "";
             this.ownerName = ownerName != null ? ownerName : "Unknown";
             this.createdAt = System.currentTimeMillis();
+            this.trusted = new HashMap<>();
+        }
+
+        // Gson deserializes via unsafe allocation and skips both the constructor and field
+        // initializers, so records loaded from an older save file can have trusted == null.
+        public Map<String, String> getTrusted() {
+            if (trusted == null) {
+                trusted = new HashMap<>();
+            }
+            return trusted;
         }
     }
 
@@ -65,8 +77,16 @@ public class ChestShopData {
         try {
             Path file = getStoragePath(level);
             Files.createDirectories(file.getParent());
-            try (Writer writer = Files.newBufferedWriter(file)) {
+            // Write to a temp file first and atomically swap it in, so a crash mid-write
+            // (or a full disk) can never leave chest_shops.json half-written/corrupted.
+            Path tmp = file.resolveSibling(file.getFileName().toString() + ".tmp");
+            try (Writer writer = Files.newBufferedWriter(tmp)) {
                 GSON.toJson(SHOPS, writer);
+            }
+            try {
+                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -136,5 +156,46 @@ public class ChestShopData {
             return false;
         }
         return record.ownerUuid.equals(playerUuid.toString());
+    }
+
+    public static synchronized boolean addTrusted(ServerLevel level, BlockPos pos, UUID uuid, String name) {
+        ShopRecord record = getRecord(level, pos);
+        if (record == null || uuid == null) return false;
+        record.getTrusted().put(uuid.toString(), name != null ? name : "Unknown");
+        save(level);
+        return true;
+    }
+
+    public static synchronized boolean removeTrusted(ServerLevel level, BlockPos pos, UUID uuid) {
+        ShopRecord record = getRecord(level, pos);
+        if (record == null || uuid == null) return false;
+        boolean removed = record.getTrusted().remove(uuid.toString()) != null;
+        if (removed) {
+            save(level);
+        }
+        return removed;
+    }
+
+    public static Map<String, String> getTrustedNames(Level level, BlockPos pos) {
+        ShopRecord record = getRecord(level, pos);
+        if (record == null) return java.util.Collections.emptyMap();
+        return record.getTrusted();
+    }
+
+    public static boolean isTrusted(Level level, BlockPos pos, UUID uuid) {
+        if (uuid == null) return false;
+        ShopRecord record = getRecord(level, pos);
+        return record != null && record.getTrusted().containsKey(uuid.toString());
+    }
+
+    /**
+     * True if the player is the owner OR a trusted co-manager of the shop at pos.
+     */
+    public static boolean canManage(Level level, BlockPos pos, UUID uuid) {
+        if (uuid == null) return false;
+        ShopRecord record = getRecord(level, pos);
+        if (record == null) return false;
+        if (uuid.toString().equals(record.ownerUuid)) return true;
+        return record.getTrusted().containsKey(uuid.toString());
     }
 }

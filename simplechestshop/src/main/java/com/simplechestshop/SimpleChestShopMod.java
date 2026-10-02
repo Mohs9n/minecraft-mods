@@ -70,10 +70,10 @@ public class SimpleChestShopMod implements ModInitializer {
                 player.sendSystemMessage(Component.literal("§a[Chest Shop] Shop registered! You are now the owner of this shop."));
             }
 
-            boolean isOwner = player.getUUID().toString().equals(record.ownerUuid);
+            boolean canManage = ChestShopData.canManage(level, pos, player.getUUID());
 
-            if (isOwner) {
-                // Owner is opening the chest
+            if (canManage) {
+                // Owner or trusted co-manager is opening the chest
                 if (player.isShiftKeyDown()) {
                     // Sneak right-click opens the Buyer Preview GUI
                     com.simplechestshop.gui.ShopBuyMenu.open((ServerPlayer) player, level, pos, trades, record.ownerName, record.ownerUuid);
