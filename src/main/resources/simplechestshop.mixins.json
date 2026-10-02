@@ -4,7 +4,12 @@
   "package": "com.simplechestshop.mixin",
   "compatibilityLevel": "JAVA_25",
   "mixins": [
-    "HopperBlockEntityMixin"
+    "HopperBlockEntityMixin",
+    "ServerExplosionMixin",
+    "ExplosionDamageCalculatorMixin",
+    "LevelMixin",
+    "ChestBlockEntityMixin",
+    "RandomizableContainerBlockEntityMixin"
   ],
   "client": [
   ],

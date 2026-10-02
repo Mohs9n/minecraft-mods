@@ -7,6 +7,17 @@ A lightweight, server-friendly Chest Shop mod for **Fabric Minecraft 26.3** ("Wi
 ## 🌟 Features
 
 - **100% Vanilla Chest Compatible**: Works with standard wooden chests, trapped chests, and double chests. No custom blocks or tile entities required.
+- **Zero-Extra-Step Instant Registration**:
+  - Simply open your chest and put your shop paper inside: **the shop is registered instantly the moment the paper enters the chest slot!**
+  - No separate right-click, punching, or interaction step needed.
+  - A friendly chime and chat confirmation (`✔ Shop registered! You are now the owner of this shop.`) confirms ownership right away while you are in the chest GUI.
+  - If you ever take the paper out, the shop automatically unregisters and becomes a regular chest again.
+- **Total Protection Against ALL Breaking Methods**:
+  - 💥 **Explosion-Proof**: TNT, Creepers, Ghast Fireballs, Wither Skulls, End Crystals, Beds (Nether/End), Respawn Anchors, and Wind Charges cannot destroy shop chests or burn them. The chest has Bedrock-grade blast resistance.
+  - 💀 **Boss-Proof**: The Wither (`destroyBlock`) and Ender Dragon (`removeBlock`) cannot destroy or remove shop chests.
+  - 🔒 **Player Break Protection**: Non-owners cannot break the chest in survival mode.
+  - 🛑 **Chest GUI Lock**: Non-owners cannot open the raw chest inventory to steal contents or money; right-clicking opens the graphical Buy Menu instead.
+  - 🚫 **Hopper Anti-Theft**: Hoppers and hopper minecarts cannot extract items from or inject junk into active shop chests.
 - **Multiple Alternative Prices (Multi-Currency)**:
   - Sell the same product for multiple different currencies/prices!
   - Example: `1 diamond or 10 iron_ingot -> 64 cooked_beef`
@@ -36,10 +47,6 @@ A lightweight, server-friendly Chest Shop mod for **Fabric Minecraft 26.3** ("Wi
   - `16 oak_log for 1 diamond` (Sale for Price)
   - `[Shop] 1 diamond` or `1 diamond` (Dynamic mode: sells whatever is in chest for 1 diamond)
   - Automatically handles plurals (`diamonds` → `diamond`, `apples` → `apple`) and spaced names (`cooked beef` → `cooked_beef`).
-- **Complete Anti-Theft Security**:
-  - **Chest GUI Lock**: Non-owners cannot open the raw chest inventory to steal items or deposited currency.
-  - **Break Protection**: Non-owners cannot break the shop chest in survival mode.
-  - **Hopper Anti-Theft**: Hoppers (and hopper minecarts) cannot suck items out of or inject junk into active shop chests.
 - **Owner Restocking & Preview**:
   - **Owner Normal Right-Click**: Opens the standard chest inventory to restock goods, collect profits, or adjust the paper.
   - **Owner Sneak + Right-Click**: Opens the graphical Buy Menu in preview mode to test how customers see the shop.
@@ -51,11 +58,8 @@ A lightweight, server-friendly Chest Shop mod for **Fabric Minecraft 26.3** ("Wi
 
 ### 1. Creating a Shop
 1. Place a normal Chest down and put your stock inside (e.g. Cooked Beef).
-2. Type `/shopcreate` in chat.
-3. Place your primary price in **Price 1** (e.g. 1 Diamond), and optionally alternative prices in **Price 2** (e.g. 10 Iron Ingot).
-4. Place your product in the **Sale Slot** (e.g. 64 Cooked Beef).
-5. Click **[ Create Shop Paper ]**.
-6. Place the generated paper into the chest. You are now the registered owner!
+2. Get a shop paper via `/shopcreate` or rename a paper in an Anvil (e.g. `1 diamond or 10 iron_ingot -> 64 cooked_beef`).
+3. Open the chest and place the paper inside: **you are immediately registered as the owner!**
 
 ### 2. Buying from a Shop
 1. **To view info**: Left-click (punch) the chest with an empty hand.
@@ -95,4 +99,4 @@ Run the included JUnit 5 test suite:
 ```bash
 gradlew.bat test
 ```
-Validates single and multi-price syntax (`or`, `/`, `|`), plurals, prefixes, and edge cases.
+Validates single and multi-price syntax (`or`, `/`, `|`), plurals, prefixes, double chests, and ownership lifecycle.

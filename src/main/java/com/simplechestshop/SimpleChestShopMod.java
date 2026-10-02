@@ -61,12 +61,12 @@ public class SimpleChestShopMod implements ModInitializer {
                 return InteractionResult.PASS;
             }
 
-            ChestShopData.ShopRecord record = ChestShopData.getRecord(pos);
+            ChestShopData.ShopRecord record = ChestShopData.getRecord(serverLevel, pos);
 
             // Auto-register owner if not yet registered
             if (record == null) {
                 ChestShopData.register(serverLevel, pos, player.getUUID(), player.getName().getString());
-                record = ChestShopData.getRecord(pos);
+                record = ChestShopData.getRecord(serverLevel, pos);
                 player.sendSystemMessage(Component.literal("§a[Chest Shop] Shop registered! You are now the owner of this shop."));
             }
 
@@ -102,7 +102,7 @@ public class SimpleChestShopMod implements ModInitializer {
             java.util.List<ShopTrade> trades = ChestShopManager.getAllShopTrades(level, pos);
             if (!trades.isEmpty()) {
                 Container container = ChestShopManager.getChestContainer(level, pos);
-                ChestShopData.ShopRecord record = ChestShopData.getRecord(pos);
+                ChestShopData.ShopRecord record = ChestShopData.getRecord(level, pos);
                 String ownerName = record != null ? record.ownerName : "Unknown";
                 ChestShopManager.showShopInfo(player, trades, container, ownerName);
                 return InteractionResult.SUCCESS;
@@ -123,7 +123,7 @@ public class SimpleChestShopMod implements ModInitializer {
 
             java.util.List<ShopTrade> trades = ChestShopManager.getAllShopTrades(level, pos);
             if (!trades.isEmpty()) {
-                ChestShopData.ShopRecord record = ChestShopData.getRecord(pos);
+                ChestShopData.ShopRecord record = ChestShopData.getRecord(level, pos);
                 if (record != null && !player.getUUID().toString().equals(record.ownerUuid)) {
                     if (!player.isCreative()) {
                         player.sendSystemMessage(Component.literal("§c[Chest Shop] This shop belongs to " + record.ownerName + "! You cannot break it."));

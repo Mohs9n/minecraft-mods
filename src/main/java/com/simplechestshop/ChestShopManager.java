@@ -12,6 +12,7 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.world.Container;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.ContainerUser;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -58,6 +59,84 @@ public class ChestShopManager {
     public static ShopTrade getShopTrade(Level level, BlockPos pos) {
         java.util.List<ShopTrade> trades = getAllShopTrades(level, pos);
         return trades.isEmpty() ? null : trades.get(0);
+    }
+
+    /**
+     * Checks if a block at pos is a protected, registered shop chest.
+     */
+    public static boolean isProtectedShop(Level level, BlockPos pos) {
+        if (level == null || pos == null) return false;
+        ChestShopData.ShopRecord record = ChestShopData.getRecord(level, pos);
+        if (record == null) {
+            return false;
+        }
+        java.util.List<ShopTrade> trades = getAllShopTrades(level, pos);
+        return !trades.isEmpty();
+    }
+
+    /**
+     * Called whenever items are modified in a chest block entity.
+     * Automatically registers the shop the instant a valid paper is placed inside!
+     */
+    public static void onChestContentsChanged(ChestBlockEntity chest) {
+        if (chest == null) return;
+        Level level = chest.getLevel();
+        if (!(level instanceof ServerLevel serverLevel)) return;
+        BlockPos pos = chest.getBlockPos();
+
+        java.util.List<ContainerUser> users = chest.getEntitiesWithContainerOpen();
+        if (users.isEmpty()) return;
+
+        ServerPlayer player = null;
+        for (ContainerUser user : users) {
+            if (user.getLivingEntity() instanceof ServerPlayer sp) {
+                player = sp;
+                break;
+            }
+        }
+        if (player == null) return;
+
+        java.util.List<ShopTrade> trades = getAllShopTrades(serverLevel, pos);
+        ChestShopData.ShopRecord record = ChestShopData.getRecord(serverLevel, pos);
+
+        // If chest now has valid trades and is not yet registered:
+        if (!trades.isEmpty() && record == null) {
+            ChestShopData.register(serverLevel, pos, player.getUUID(), player.getName().getString());
+            player.sendSystemMessage(Component.literal("§a[Chest Shop] Shop registered! You are now the owner of this shop."));
+            serverLevel.playSound(null, pos, SoundEvents.PLAYER_LEVELUP, SoundSource.BLOCKS, 0.75f, 1.2f);
+        }
+    }
+
+    /**
+     * Called when a player closes a chest block entity.
+     * Ensures registration if not yet done, and unregisters if all shop papers were removed.
+     */
+    public static void onChestStopOpen(ChestBlockEntity chest, ContainerUser user) {
+        if (chest == null) return;
+        Level level = chest.getLevel();
+        if (!(level instanceof ServerLevel serverLevel)) return;
+        BlockPos pos = chest.getBlockPos();
+
+        ServerPlayer player = null;
+        if (user != null && user.getLivingEntity() instanceof ServerPlayer sp) {
+            player = sp;
+        }
+
+        java.util.List<ShopTrade> trades = getAllShopTrades(serverLevel, pos);
+        ChestShopData.ShopRecord record = ChestShopData.getRecord(serverLevel, pos);
+
+        if (!trades.isEmpty()) {
+            if (record == null && player != null) {
+                ChestShopData.register(serverLevel, pos, player.getUUID(), player.getName().getString());
+                player.sendSystemMessage(Component.literal("§a[Chest Shop] Shop registered! You are now the owner of this shop."));
+                serverLevel.playSound(null, pos, SoundEvents.PLAYER_LEVELUP, SoundSource.BLOCKS, 0.75f, 1.2f);
+            }
+        } else {
+            if (record != null && player != null && player.getUUID().toString().equals(record.ownerUuid)) {
+                ChestShopData.remove(serverLevel, pos);
+                player.sendSystemMessage(Component.literal("§e[Chest Shop] Shop unregistered. Chest is now a regular chest."));
+            }
+        }
     }
 
     /**

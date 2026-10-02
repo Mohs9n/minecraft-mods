@@ -5,6 +5,9 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.ChestBlock;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.LevelResource;
 
 import java.io.Reader;
@@ -78,13 +81,51 @@ public class ChestShopData {
         return SHOPS.get(posKey(pos));
     }
 
+    public static synchronized ShopRecord getRecord(Level level, BlockPos pos) {
+        ShopRecord record = SHOPS.get(posKey(pos));
+        if (record != null) return record;
+        if (level != null && pos != null) {
+            BlockState state = level.getBlockState(pos);
+            if (state.getBlock() instanceof ChestBlock) {
+                BlockPos other = ChestBlock.getConnectedBlockPos(pos, state);
+                if (other != null && !other.equals(pos)) {
+                    return SHOPS.get(posKey(other));
+                }
+            }
+        }
+        return null;
+    }
+
     public static synchronized void register(ServerLevel level, BlockPos pos, UUID ownerUuid, String ownerName) {
-        SHOPS.put(posKey(pos), new ShopRecord(ownerUuid, ownerName));
+        ShopRecord record = new ShopRecord(ownerUuid, ownerName);
+        SHOPS.put(posKey(pos), record);
+
+        if (level != null && pos != null) {
+            BlockState state = level.getBlockState(pos);
+            if (state.getBlock() instanceof ChestBlock) {
+                BlockPos other = ChestBlock.getConnectedBlockPos(pos, state);
+                if (other != null && !other.equals(pos)) {
+                    SHOPS.put(posKey(other), record);
+                }
+            }
+        }
         save(level);
     }
 
     public static synchronized void remove(ServerLevel level, BlockPos pos) {
-        if (SHOPS.remove(posKey(pos)) != null) {
+        boolean changed = (SHOPS.remove(posKey(pos)) != null);
+        if (level != null && pos != null) {
+            BlockState state = level.getBlockState(pos);
+            if (state.getBlock() instanceof ChestBlock) {
+                BlockPos other = ChestBlock.getConnectedBlockPos(pos, state);
+                if (other != null && !other.equals(pos)) {
+                    if (SHOPS.remove(posKey(other)) != null) {
+                        changed = true;
+                    }
+                }
+            }
+        }
+        if (changed) {
             save(level);
         }
     }
