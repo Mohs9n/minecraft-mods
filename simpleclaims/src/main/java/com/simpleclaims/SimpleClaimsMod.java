@@ -1,12 +1,16 @@
 package com.simpleclaims;
 
 import com.simpleclaims.command.ClaimCommands;
+import com.simpleclaims.network.OpenClaimNameScreenPayload;
+import com.simpleclaims.network.SubmitClaimNamePayload;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.*;
+import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
@@ -24,6 +28,16 @@ public class SimpleClaimsMod implements ModInitializer {
     @Override
     public void onInitialize() {
         LOGGER.info("Initializing Simple Claims mod for Minecraft 26.3...");
+
+        // Custom claim-naming screen networking: register the payload types on both the
+        // S2C ("open the screen") and C2S ("here's the name I typed") channels, and handle
+        // the submission server-side. The client never needs to be trusted - this still
+        // runs through the exact same validation as the text command would.
+        PayloadTypeRegistry.clientboundPlay().register(OpenClaimNameScreenPayload.TYPE, OpenClaimNameScreenPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SubmitClaimNamePayload.TYPE, SubmitClaimNamePayload.CODEC);
+        ServerPlayNetworking.registerGlobalReceiver(SubmitClaimNamePayload.TYPE, (payload, context) -> {
+            ClaimCommands.createClaimFromScreen(context.player(), payload.name());
+        });
 
         // Load saved claims on server start
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {

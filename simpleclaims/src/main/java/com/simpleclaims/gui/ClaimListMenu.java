@@ -3,6 +3,8 @@ package com.simpleclaims.gui;
 import com.simpleclaims.Claim;
 import com.simpleclaims.ClaimManager;
 import com.simpleclaims.command.ClaimCommands;
+import com.simpleclaims.network.OpenClaimNameScreenPayload;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
@@ -154,7 +156,8 @@ public class ClaimListMenu extends ChestMenu {
             if (slotIndex == CREATE_SLOT && player instanceof ServerPlayer sp) {
                 String dim = ClaimManager.getDimensionId(player.level());
                 if (ClaimManager.getSelection(player.getUUID(), dim).isComplete()) {
-                    ClaimNameDialog.open(sp);
+                    sp.closeContainer();
+                    ServerPlayNetworking.send(sp, new OpenClaimNameScreenPayload());
                 }
                 return;
             }

@@ -175,6 +175,19 @@ public class ClaimCommands {
         return 1;
     }
 
+    /**
+     * Entry point for the custom claim-naming screen (com.simpleclaims.client.ClaimNameScreen).
+     * The screen only lets the player submit a name matching this same rule, but the server
+     * re-validates it independently anyway - client input is never trusted alone.
+     */
+    public static void createClaimFromScreen(ServerPlayer player, String name) {
+        if (name == null || !name.matches("[A-Za-z0-9]{3,16}")) {
+            player.sendSystemMessage(Component.literal("§c[SimpleClaims] Claim names must be 3-16 letters/numbers only."));
+            return;
+        }
+        handleCreateFromSelection(player, name);
+    }
+
     private static int handleCreateFromSelection(ServerPlayer player, String name) {
         String dim = ClaimManager.getDimensionId(player.level());
         ClaimManager.PlayerSelection sel = ClaimManager.getSelection(player.getUUID(), dim);
