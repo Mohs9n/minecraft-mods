@@ -52,12 +52,12 @@ public class SimpleClaimsMod implements ModInitializer {
 
         // Wand left-click & block break prevention
         AttackBlockCallback.EVENT.register((player, level, hand, pos, direction) -> {
-            if (level.isClientSide() || hand != InteractionHand.MAIN_HAND) {
+            if (level.isClientSide()) {
                 return InteractionResult.PASS;
             }
 
             ItemStack held = player.getItemInHand(hand);
-            if (isClaimWand(held)) {
+            if (hand == InteractionHand.MAIN_HAND && isClaimWand(held)) {
                 ClaimManager.setPos1(player, pos);
                 return InteractionResult.SUCCESS;
             }
@@ -74,22 +74,28 @@ public class SimpleClaimsMod implements ModInitializer {
 
         // Wand right-click & block interaction / place prevention
         UseBlockCallback.EVENT.register((player, level, hand, hitResult) -> {
-            if (level.isClientSide() || hand != InteractionHand.MAIN_HAND) {
+            if (level.isClientSide()) {
                 return InteractionResult.PASS;
             }
 
             BlockPos pos = hitResult.getBlockPos();
             ItemStack held = player.getItemInHand(hand);
 
-            if (isClaimWand(held)) {
+            if (hand == InteractionHand.MAIN_HAND && isClaimWand(held)) {
                 ClaimManager.setPos2(player, pos);
                 return InteractionResult.SUCCESS;
             }
 
             // Check if interacting or placing into a claim
             BlockPos targetPos = pos;
-            if (!held.isEmpty() && (held.getItem() == Items.FLINT_AND_STEEL || held.getItem() == Items.LAVA_BUCKET || held.getItem() == Items.WATER_BUCKET)) {
-                targetPos = pos.relative(hitResult.getDirection());
+            if (!held.isEmpty()) {
+                if (held.getItem() instanceof net.minecraft.world.item.BlockItem) {
+                    if (!level.getBlockState(pos).canBeReplaced()) {
+                        targetPos = pos.relative(hitResult.getDirection());
+                    }
+                } else if (held.getItem() == Items.FLINT_AND_STEEL || held.getItem() == Items.LAVA_BUCKET || held.getItem() == Items.WATER_BUCKET) {
+                    targetPos = pos.relative(hitResult.getDirection());
+                }
             }
 
             if (!ClaimManager.canPlayerModify(player, level, targetPos) || !ClaimManager.canPlayerModify(player, level, pos)) {

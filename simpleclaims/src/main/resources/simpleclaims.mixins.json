@@ -6,7 +6,8 @@
   "mixins": [
     "ServerExplosionMixin",
     "ExplosionDamageCalculatorMixin",
-    "LevelMixin"
+    "EnderDragonMixin",
+    "WitherBossMixin"
   ],
   "client": [
   ],

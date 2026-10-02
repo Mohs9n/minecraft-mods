@@ -73,30 +73,27 @@ public class ClaimCommands {
                                                                     return handleCreateWithCoords(player, name, x1, z1, x2, z2);
                                                                 })))))))
                 .then(Commands.literal("trust")
-                        .then(Commands.argument("player", EntityArgument.player())
+                        .then(Commands.argument("player", StringArgumentType.word())
                                 .executes(ctx -> {
                                     ServerPlayer owner = ctx.getSource().getPlayerOrException();
-                                    ServerPlayer target = EntityArgument.getPlayer(ctx, "player");
-                                    return handleTrust(owner, target.getUUID(), target.getName().getString());
-                                }))
-                        .then(Commands.argument("playerName", StringArgumentType.word())
-                                .executes(ctx -> {
-                                    ServerPlayer owner = ctx.getSource().getPlayerOrException();
-                                    String targetName = StringArgumentType.getString(ctx, "playerName");
+                                    String targetName = StringArgumentType.getString(ctx, "player");
+                                    ServerPlayer target = null;
                                     if (owner.level().getServer() != null) {
-                                        ServerPlayer target = owner.level().getServer().getPlayerList().getPlayerByName(targetName);
-                                        if (target != null) {
-                                            return handleTrust(owner, target.getUUID(), target.getName().getString());
-                                        }
+                                        target = owner.level().getServer().getPlayerList().getPlayerByName(targetName);
                                     }
-                                    owner.sendSystemMessage(Component.literal("§c[SimpleClaims] Player §e" + targetName + " §cmust be online to trust!"));
-                                    return 0;
+                                    if (target != null) {
+                                        return handleTrust(owner, target.getUUID(), target.getName().getString());
+                                    } else {
+                                        // Offline player trust
+                                        UUID offlineUuid = UUID.nameUUIDFromBytes(("OfflinePlayer:" + targetName).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                                        return handleTrust(owner, offlineUuid, targetName);
+                                    }
                                 })))
                 .then(Commands.literal("untrust")
-                        .then(Commands.argument("playerName", StringArgumentType.word())
+                        .then(Commands.argument("player", StringArgumentType.word())
                                 .executes(ctx -> {
                                     ServerPlayer owner = ctx.getSource().getPlayerOrException();
-                                    String targetName = StringArgumentType.getString(ctx, "playerName");
+                                    String targetName = StringArgumentType.getString(ctx, "player");
                                     return handleUntrust(owner, targetName);
                                 })))
                 .then(Commands.literal("list")
@@ -212,12 +209,12 @@ public class ClaimCommands {
             return 0;
         }
 
-        if (!claim.isOwner(owner.getUUID()) && !ClaimManager.isOpOrAdmin(owner)) {
+        if (!claim.isOwner(owner.getUUID(), owner.getName().getString()) && !ClaimManager.isOpOrAdmin(owner)) {
             owner.sendSystemMessage(Component.literal("§c[SimpleClaims] Only the owner of this claim can trust players!"));
             return 0;
         }
 
-        if (claim.isOwner(targetUuid)) {
+        if (claim.isOwner(targetUuid, targetName)) {
             owner.sendSystemMessage(Component.literal("§c[SimpleClaims] You are already the owner of this claim!"));
             return 0;
         }
@@ -242,34 +239,24 @@ public class ClaimCommands {
             return 0;
         }
 
-        if (!claim.isOwner(owner.getUUID()) && !ClaimManager.isOpOrAdmin(owner)) {
+        if (!claim.isOwner(owner.getUUID(), owner.getName().getString()) && !ClaimManager.isOpOrAdmin(owner)) {
             owner.sendSystemMessage(Component.literal("§c[SimpleClaims] Only the owner of this claim can untrust players!"));
             return 0;
         }
 
-        UUID targetUuid = null;
-        for (Map.Entry<String, String> entry : claim.getMembers().entrySet()) {
-            if (entry.getValue().equalsIgnoreCase(targetName)) {
-                try {
-                    targetUuid = UUID.fromString(entry.getKey());
-                } catch (IllegalArgumentException ignored) {}
-                break;
-            }
-        }
-
-        if (targetUuid == null) {
+        boolean removed = claim.removeMember(targetName);
+        if (!removed) {
             owner.sendSystemMessage(Component.literal("§c[SimpleClaims] Player §e" + targetName + " §cis not trusted in this claim."));
             return 0;
         }
 
-        claim.removeMember(targetUuid);
         ClaimManager.save((ServerLevel) owner.level());
         owner.sendSystemMessage(Component.literal("§e✔ Removed §f" + targetName + " §efrom claim §6" + claim.getName() + "§e."));
         return 1;
     }
 
     private static int handleList(ServerPlayer player) {
-        List<Claim> claims = ClaimManager.getClaimsByOwner(player.getUUID());
+        List<Claim> claims = ClaimManager.getClaimsByOwner(player);
         if (claims.isEmpty()) {
             player.sendSystemMessage(Component.literal("§e[SimpleClaims] You do not own any claims yet. Use §a/claim wand §cto create one!"));
             return 1;
@@ -316,7 +303,7 @@ public class ClaimCommands {
             return 0;
         }
 
-        if (!claim.isOwner(player.getUUID()) && !ClaimManager.isOpOrAdmin(player)) {
+        if (!claim.isOwner(player.getUUID(), player.getName().getString()) && !ClaimManager.isOpOrAdmin(player)) {
             player.sendSystemMessage(Component.literal("§c[SimpleClaims] You do not have permission to delete §e" + claim.getOwnerName() + "§c's claim!"));
             return 0;
         }
@@ -338,7 +325,7 @@ public class ClaimCommands {
         if (claim != null) return claim;
 
         // Otherwise if player owns exactly 1 claim, return that one
-        List<Claim> owned = ClaimManager.getClaimsByOwner(player.getUUID());
+        List<Claim> owned = ClaimManager.getClaimsByOwner(player);
         if (owned.size() == 1) {
             return owned.get(0);
         }
