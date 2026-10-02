@@ -82,6 +82,10 @@ public class SimpleClaimsMod implements ModInitializer {
             ItemStack held = player.getItemInHand(hand);
 
             if (isClaimWand(held)) {
+                if (player.isShiftKeyDown() && player instanceof ServerPlayer sp) {
+                    com.simpleclaims.gui.ClaimListMenu.open(sp);
+                    return InteractionResult.SUCCESS;
+                }
                 ClaimManager.setPos2(player, pos);
                 return InteractionResult.SUCCESS;
             }
@@ -98,6 +102,21 @@ public class SimpleClaimsMod implements ModInitializer {
                 String owner = claim != null ? claim.getOwnerName() : "another player";
                 player.sendSystemMessage(Component.literal("§c[SimpleClaims] You cannot build or interact in §e" + owner + "§c's claim!"));
                 return InteractionResult.FAIL;
+            }
+
+            return InteractionResult.PASS;
+        });
+
+        // Sneak + right-click the wand in open air (no block targeted) also opens the GUI
+        UseItemCallback.EVENT.register((player, level, hand) -> {
+            if (level.isClientSide() || hand != InteractionHand.MAIN_HAND) {
+                return InteractionResult.PASS;
+            }
+
+            ItemStack held = player.getItemInHand(hand);
+            if (isClaimWand(held) && player.isShiftKeyDown() && player instanceof ServerPlayer sp) {
+                com.simpleclaims.gui.ClaimListMenu.open(sp);
+                return InteractionResult.SUCCESS;
             }
 
             return InteractionResult.PASS;
@@ -155,10 +174,6 @@ public class SimpleClaimsMod implements ModInitializer {
     }
 
     private static boolean isClaimWand(ItemStack stack) {
-        if (stack == null || stack.isEmpty() || stack.getItem() != Items.GOLDEN_HOE) {
-            return false;
-        }
-        Component name = stack.get(net.minecraft.core.component.DataComponents.CUSTOM_NAME);
-        return name != null && name.getString().contains("Claim Wand");
+        return ClaimManager.isClaimWand(stack);
     }
 }

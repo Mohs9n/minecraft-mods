@@ -5,6 +5,7 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.simpleclaims.Claim;
 import com.simpleclaims.ClaimManager;
+import com.simpleclaims.gui.ClaimListMenu;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
@@ -28,7 +29,8 @@ public class ClaimCommands {
         dispatcher.register(Commands.literal("claim")
                 .executes(ctx -> {
                     ServerPlayer player = ctx.getSource().getPlayerOrException();
-                    return showClaimInfo(player);
+                    ClaimListMenu.open(player);
+                    return 1;
                 })
                 .then(Commands.literal("help")
                         .executes(ctx -> {
@@ -39,6 +41,18 @@ public class ClaimCommands {
                         .executes(ctx -> {
                             ServerPlayer player = ctx.getSource().getPlayerOrException();
                             return giveWand(player);
+                        }))
+                .then(Commands.literal("gui")
+                        .executes(ctx -> {
+                            ServerPlayer player = ctx.getSource().getPlayerOrException();
+                            ClaimListMenu.open(player);
+                            return 1;
+                        }))
+                .then(Commands.literal("menu")
+                        .executes(ctx -> {
+                            ServerPlayer player = ctx.getSource().getPlayerOrException();
+                            ClaimListMenu.open(player);
+                            return 1;
                         }))
                 .then(Commands.literal("pos1")
                         .executes(ctx -> {
@@ -124,6 +138,7 @@ public class ClaimCommands {
 
     private static int showHelp(ServerPlayer player) {
         player.sendSystemMessage(Component.literal("§6================ §e[SimpleClaims Help] §6================"));
+        player.sendSystemMessage(Component.literal("§e/claim gui §7- Opens a graphical menu to manage your claims"));
         player.sendSystemMessage(Component.literal("§e/claim wand §7- Gives a selection wand to set corners"));
         player.sendSystemMessage(Component.literal("§e/claim pos1 §7- Sets Corner 1 to your position"));
         player.sendSystemMessage(Component.literal("§e/claim pos2 §7- Sets Corner 2 to your position"));
@@ -137,20 +152,24 @@ public class ClaimCommands {
         return 1;
     }
 
-    private static int giveWand(ServerPlayer player) {
+    public static int giveWand(ServerPlayer player) {
         ItemStack wand = new ItemStack(Items.GOLDEN_HOE);
-        wand.set(DataComponents.CUSTOM_NAME, Component.literal("§6§lClaim Wand"));
-        wand.set(DataComponents.LORE, new ItemLore(List.of(
-                Component.literal("§7Left-click block: §eSet Corner 1"),
-                Component.literal("§7Right-click block: §eSet Corner 2"),
-                Component.literal("§7Use §a/claim create <name> §7to finish!")
-        )));
+        wand.set(DataComponents.CUSTOM_NAME, ClaimManager.WAND_NAME);
+        wand.set(DataComponents.LORE, new ItemLore(ClaimManager.WAND_LORE));
 
         if (!player.getInventory().add(wand)) {
             player.drop(wand, false, Prediction.SERVER_ONLY);
         }
         player.sendSystemMessage(Component.literal("§a✔ Received Claim Wand! Left-click a block for Corner 1, Right-click for Corner 2."));
         return 1;
+    }
+
+    /**
+     * Entry point for the GUI (ClaimNameInputMenu) to create a claim from the player's
+     * current wand selection without going through the chat/command path.
+     */
+    public static int createClaimFromSelectionGui(ServerPlayer player, String name) {
+        return handleCreateFromSelection(player, name);
     }
 
     private static int handleCreateFromSelection(ServerPlayer player, String name) {

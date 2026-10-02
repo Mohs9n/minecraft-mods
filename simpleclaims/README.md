@@ -26,6 +26,10 @@ A lightweight, server-friendly land claim and anti-griefing mod for **Fabric Min
   - **Claim Wand (`/claim wand`)**: Left-click a block for Corner 1, Right-click a block for Corner 2.
   - **Quick Commands**: `/claim pos1`, `/claim pos2`, and `/claim create <name>`.
   - **Direct Coordinates**: `/claim create <name> <x1> <z1> <x2> <z2>`.
+- **Graphical Claim Manager (`/claim gui`)**:
+  - Lists every claim you own; click one to open its management screen.
+  - Trust/untrust members by clicking player heads instead of typing commands.
+  - Delete a claim with an armed "click again to confirm" button.
 - **Border Notifications**:
   - Automatically notifies players in chat when crossing claim borders:
     `§6[Claims] §7Entering §eSteve's Claim §8(Base)`
@@ -50,6 +54,7 @@ A lightweight, server-friendly land claim and anti-griefing mod for **Fabric Min
 | `/claim list` | Lists all claims owned by you with dimensions and block counts. |
 | `/claim info` | Displays details (owner, members, coordinates, size) of the claim you are in. |
 | `/claim delete` or `/claim abandon` | Deletes the claim you are standing in (owner or admin only). |
+| `/claim gui` or `/claim menu` | Opens the graphical claim manager (list, trust, untrust, delete). |
 | `/claim help` | Displays the in-game command cheat-sheet. |
 
 ---

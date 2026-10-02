@@ -11,6 +11,7 @@ import java.io.Writer;
 import java.lang.reflect.Type;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -44,8 +45,16 @@ public class ClaimStorage {
         try {
             Path file = getStoragePath(level);
             Files.createDirectories(file.getParent());
-            try (Writer writer = Files.newBufferedWriter(file)) {
+            // Write to a temp file first and atomically swap it in, so a crash mid-write
+            // (or a full disk) can never leave simple_claims.json half-written/corrupted.
+            Path tmp = file.resolveSibling(file.getFileName().toString() + ".tmp");
+            try (Writer writer = Files.newBufferedWriter(tmp)) {
                 GSON.toJson(claims, writer);
+            }
+            try {
+                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
             }
         } catch (Exception e) {
             e.printStackTrace();

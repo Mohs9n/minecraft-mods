@@ -9,6 +9,7 @@
   ],
   "contact": {},
   "license": "MIT",
+  "icon": "assets/simpleclaims/icon.png",
   "environment": "*",
   "entrypoints": {
     "main": [
