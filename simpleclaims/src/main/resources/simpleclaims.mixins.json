@@ -8,7 +8,9 @@
     "ExplosionDamageCalculatorMixin",
     "EnderDragonMixin",
     "WitherBossMixin",
-    "PistonBaseBlockMixin"
+    "PistonBaseBlockMixin",
+    "HopperBlockEntityMixin",
+    "FarmlandBlockMixin"
   ],
   "client": [
   ],

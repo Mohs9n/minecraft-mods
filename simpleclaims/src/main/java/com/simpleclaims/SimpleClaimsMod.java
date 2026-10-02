@@ -12,8 +12,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.entity.decoration.ArmorStand;
-import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import org.slf4j.Logger;
@@ -165,13 +163,14 @@ public class SimpleClaimsMod implements ModInitializer {
             return InteractionResult.PASS;
         });
 
-        // Protect item frames and armor stands from interaction (taking items/armor)
+        // Protect animals, villagers, item frames, armor stands, and vehicles from
+        // interaction (leashing, shearing, saddling, riding off with, trading, looting)
         UseEntityCallback.EVENT.register((player, level, hand, entity, hitResult) -> {
             if (level.isClientSide()) {
                 return InteractionResult.PASS;
             }
 
-            if (entity instanceof ItemFrame || entity instanceof ArmorStand) {
+            if (ClaimManager.isProtectedEntityType(entity)) {
                 if (!ClaimManager.canPlayerModify(player, level, entity.blockPosition())) {
                     Claim claim = ClaimManager.getClaimAt(level, entity.blockPosition());
                     String owner = claim != null ? claim.getOwnerName() : "another player";

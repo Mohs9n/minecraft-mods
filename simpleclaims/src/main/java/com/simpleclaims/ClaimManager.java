@@ -10,9 +10,11 @@ import net.minecraft.world.entity.TamableAnimal;
 import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.world.entity.decoration.painting.Painting;
-import net.minecraft.world.entity.npc.villager.Villager;
+import net.minecraft.world.entity.npc.villager.AbstractVillager;
 import net.minecraft.world.entity.animal.Animal;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.vehicle.boat.AbstractBoat;
+import net.minecraft.world.entity.vehicle.minecart.AbstractMinecart;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.ItemLore;
@@ -274,6 +276,25 @@ public class ClaimManager {
         return canPlayerModify(player, level, pos);
     }
 
+    /**
+     * Entities a stranger can neither damage nor interact with inside someone's claim:
+     * tamed/wild animals and villagers (no leashing, shearing, saddling, milking, feeding,
+     * breeding, or trading away someone's livestock/trade hall), armor stands and item
+     * frames (no stripping their contents), paintings, and boats/minecarts (no riding off
+     * with or looting someone's parked vehicle or chest minecart). Hostile mobs are
+     * deliberately excluded - they're always fair game to fight even inside a claim.
+     */
+    public static boolean isProtectedEntityType(Entity target) {
+        return target instanceof Animal
+                || target instanceof TamableAnimal
+                || target instanceof AbstractVillager
+                || target instanceof ArmorStand
+                || target instanceof ItemFrame
+                || target instanceof Painting
+                || target instanceof AbstractBoat
+                || target instanceof AbstractMinecart;
+    }
+
     public static boolean canPlayerDamageEntity(Player player, Entity target) {
         if (target == null) return true;
         Level level = target.level();
@@ -287,11 +308,7 @@ public class ClaimManager {
         if (isOpOrAdmin(player)) {
             return true;
         }
-
-        // Hostile monsters are not protected
-        if (!(target instanceof Animal) && !(target instanceof Villager)
-                && !(target instanceof TamableAnimal) && !(target instanceof ArmorStand)
-                && !(target instanceof ItemFrame) && !(target instanceof Painting)) {
+        if (!isProtectedEntityType(target)) {
             return true;
         }
 
