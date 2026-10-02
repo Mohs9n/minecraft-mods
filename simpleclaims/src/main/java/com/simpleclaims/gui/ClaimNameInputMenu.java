@@ -7,6 +7,7 @@ import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AnvilMenu;
+import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.ContainerLevelAccess;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -38,7 +39,7 @@ public class ClaimNameInputMenu extends AnvilMenu {
 
         ItemStack seed = new ItemStack(Items.PAPER);
         seed.set(DataComponents.CUSTOM_NAME, Component.literal("My Claim"));
-        seed.set(DataComponents.LORE, new ItemLore(List.of(Component.literal("§7Type a claim name above, then take this paper to confirm."))));
+        seed.set(DataComponents.LORE, new ItemLore(List.of(Component.literal("§7Type a claim name above, then click the arrow slot to confirm."))));
         getSlot(AnvilMenu.INPUT_SLOT).set(seed);
         this.typedName = "My Claim";
     }
@@ -73,20 +74,57 @@ public class ClaimNameInputMenu extends AnvilMenu {
 
     @Override
     protected void onTake(Player player, ItemStack stack) {
-        if (completed) return;
-        completed = true;
+        // Intentionally empty: clicked() below handles confirmation and never lets the
+        // vanilla "give the result item to the player" transfer happen in the first place,
+        // so there is nothing left here to do.
+    }
 
-        Component nameComponent = stack.get(DataComponents.CUSTOM_NAME);
-        String finalName = (nameComponent != null && !nameComponent.getString().isBlank())
-                ? nameComponent.getString() : "My Claim";
-
-        if (player instanceof ServerPlayer sp) {
-            callback.onNamed(sp, finalName);
+    /**
+     * Clicking the result slot confirms the name WITHOUT ever letting the paper reach the
+     * player's cursor/inventory - we never call super.clicked() for that slot, so vanilla's
+     * item-transfer logic for an anvil's result never runs. The input/additional slots are
+     * frozen (nothing to rearrange); clicks there and in the player inventory are otherwise
+     * harmless no-ops except shift-click, which is blocked outright.
+     */
+    @Override
+    public void clicked(int slotIndex, int button, ContainerInput input, Player player) {
+        if (slotIndex == AnvilMenu.RESULT_SLOT) {
+            if (!completed) {
+                completed = true;
+                String finalName = (typedName == null || typedName.isBlank()) ? "My Claim" : typedName;
+                if (player instanceof ServerPlayer sp) {
+                    sp.closeContainer();
+                    callback.onNamed(sp, finalName);
+                }
+            }
+            return;
         }
+
+        if (slotIndex == AnvilMenu.INPUT_SLOT || slotIndex == AnvilMenu.ADDITIONAL_SLOT) {
+            sendAllDataToRemote();
+            return;
+        }
+
+        if (input == ContainerInput.QUICK_MOVE) {
+            sendAllDataToRemote();
+            return;
+        }
+        super.clicked(slotIndex, button, input, player);
     }
 
     @Override
     public boolean stillValid(Player player) {
         return player == owner && player.isAlive();
+    }
+
+    @Override
+    public void removed(Player player) {
+        // ItemCombinerMenu.removed() normally returns whatever's in the input slots to the
+        // player when the menu closes (so you get your materials back if you abandon an
+        // anvil repair). Our "input" is just a placeholder paper for the rename UI, not a
+        // real item - clear it first so it never gets handed back.
+        inputSlots.setItem(AnvilMenu.INPUT_SLOT, ItemStack.EMPTY);
+        inputSlots.setItem(AnvilMenu.ADDITIONAL_SLOT, ItemStack.EMPTY);
+        super.removed(player);
     }
 }
