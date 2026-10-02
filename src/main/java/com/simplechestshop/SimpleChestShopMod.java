@@ -8,6 +8,7 @@ import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -28,6 +29,11 @@ public class SimpleChestShopMod implements ModInitializer {
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             ChestShopData.load(server.overworld());
             LOGGER.info("Simple Chest Shop data loaded.");
+        });
+
+        // Register commands (/shopcreate and /shop)
+        net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+            com.simplechestshop.command.ShopCommands.register(dispatcher);
         });
 
         // Handle right-click interaction on chest (Buying or Opening)
@@ -69,17 +75,17 @@ public class SimpleChestShopMod implements ModInitializer {
             if (isOwner) {
                 // Owner is opening the chest
                 if (player.isShiftKeyDown()) {
-                    // Sneak right-click gives shop summary
-                    Container container = ChestShopManager.getChestContainer(level, pos);
-                    ChestShopManager.showShopInfo(player, trade, container, record.ownerName);
+                    // Sneak right-click opens the Buyer Preview GUI
+                    com.simplechestshop.gui.ShopBuyMenu.open((ServerPlayer) player, level, pos, trade, record.ownerName, record.ownerUuid);
                     return InteractionResult.SUCCESS;
                 }
                 // Allow owner to open the chest GUI normally to manage stock/earnings
                 return InteractionResult.PASS;
             }
 
-            // Customer interaction (Buying or inspecting)
-            return ChestShopManager.tryPurchase(player, level, pos, hand);
+            // Customer interaction: Open graphical Buy Menu!
+            com.simplechestshop.gui.ShopBuyMenu.open((ServerPlayer) player, level, pos, trade, record.ownerName, record.ownerUuid);
+            return InteractionResult.SUCCESS;
         });
 
         // Handle left-click interaction (punching chest for shop details)

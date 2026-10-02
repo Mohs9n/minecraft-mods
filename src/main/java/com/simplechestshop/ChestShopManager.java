@@ -219,7 +219,7 @@ public class ChestShopManager {
         return InteractionResult.SUCCESS;
     }
 
-    private static boolean canStoreItem(Container container, ItemStack stackToAdd) {
+    public static boolean canStoreItem(Container container, ItemStack stackToAdd) {
         int left = stackToAdd.getCount();
         for (int i = 0; i < container.getContainerSize(); i++) {
             ItemStack slot = container.getItem(i);
@@ -235,7 +235,7 @@ public class ChestShopManager {
         return false;
     }
 
-    private static void storeItem(Container container, ItemStack stackToAdd) {
+    public static void storeItem(Container container, ItemStack stackToAdd) {
         for (int i = 0; i < container.getContainerSize(); i++) {
             ItemStack slot = container.getItem(i);
             if (slot.isEmpty()) {
@@ -250,6 +250,71 @@ public class ChestShopManager {
                 if (stackToAdd.isEmpty()) return;
             }
         }
+    }
+
+    public static int countPlayerItem(Player player, Item item) {
+        if (player == null || item == null) return 0;
+        int total = 0;
+        for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+            ItemStack st = player.getInventory().getItem(i);
+            if (!st.isEmpty() && st.getItem() == item) {
+                total += st.getCount();
+            }
+        }
+        return total;
+    }
+
+    public static boolean deductPlayerItem(Player player, Item item, int count) {
+        if (countPlayerItem(player, item) < count) {
+            return false;
+        }
+        int remaining = count;
+        for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+            ItemStack st = player.getInventory().getItem(i);
+            if (!st.isEmpty() && st.getItem() == item) {
+                int take = Math.min(st.getCount(), remaining);
+                st.shrink(take);
+                remaining -= take;
+                if (remaining <= 0) break;
+            }
+        }
+        player.getInventory().setChanged();
+        return true;
+    }
+
+    public static Item getActualSaleItem(Container container, ShopTrade trade) {
+        if (trade == null) return null;
+        if (trade.getSaleItem() != null) return trade.getSaleItem();
+        if (container == null) return null;
+
+        for (int i = 0; i < container.getContainerSize(); i++) {
+            ItemStack st = container.getItem(i);
+            if (!st.isEmpty() && !ShopParser.isShopConfigItem(st)) {
+                return st.getItem();
+            }
+        }
+        return null;
+    }
+
+    public static boolean removeSaleItems(Container container, Item item, int count) {
+        if (container == null || item == null || count <= 0) return false;
+        int remaining = count;
+        for (int i = 0; i < container.getContainerSize(); i++) {
+            ItemStack st = container.getItem(i);
+            if (ShopParser.isShopConfigItem(st)) continue;
+
+            if (st.getItem() == item) {
+                int take = Math.min(st.getCount(), remaining);
+                st.shrink(take);
+                remaining -= take;
+                if (remaining <= 0) {
+                    container.setChanged();
+                    return true;
+                }
+            }
+        }
+        container.setChanged();
+        return remaining <= 0;
     }
 
     public static String getItemDisplayName(Item item) {
