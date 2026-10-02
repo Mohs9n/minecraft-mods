@@ -125,7 +125,7 @@ public class SimpleChestShopMod implements ModInitializer {
             if (!trades.isEmpty()) {
                 ChestShopData.ShopRecord record = ChestShopData.getRecord(level, pos);
                 if (record != null && !player.getUUID().toString().equals(record.ownerUuid)) {
-                    if (!player.isCreative()) {
+                    if (!ChestShopManager.isOp(player)) {
                         player.sendSystemMessage(Component.literal("§c[Chest Shop] This shop belongs to " + record.ownerName + "! You cannot break it."));
                         return false;
                     }

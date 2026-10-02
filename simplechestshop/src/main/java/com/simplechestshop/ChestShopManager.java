@@ -329,6 +329,19 @@ public class ChestShopManager {
         return remaining <= 0;
     }
 
+    // Only real server operators bypass shop protection. Creative mode is just a gamemode
+    // setting - any regular player can end up in it (a build server default, a reward
+    // plugin, a misconfigured default gamemode), so treating it as "is admin" would let
+    // them break/loot anyone's shop chest for free. Op status is the only thing that
+    // actually means "this account is trusted by the server owner."
+    public static boolean isOp(Player player) {
+        if (player == null) return false;
+        if (player.level() != null && player.level().getServer() != null) {
+            return player.level().getServer().getPlayerList().isOp(player.nameAndId());
+        }
+        return false;
+    }
+
     public static Component getItemComponent(Item item) {
         if (item == null) return Component.literal("Unknown");
         String fallback = getHumanReadableName(item);

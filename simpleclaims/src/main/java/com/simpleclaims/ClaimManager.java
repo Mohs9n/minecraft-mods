@@ -243,9 +243,13 @@ public class ClaimManager {
         return getClaimAt(level, pos) != null;
     }
 
+    // Only real server operators bypass claim protection. Creative mode is just a gamemode
+    // setting - any regular player can end up in it (a build server default, a minigame
+    // lobby, a reward plugin), so treating it as "is admin" would let them break/place/
+    // interact anywhere, in anyone's claim, for free. Op status is the only thing that
+    // actually means "this account is trusted by the server owner."
     public static boolean isOpOrAdmin(Player player) {
         if (player == null) return false;
-        if (player.isCreative()) return true;
         if (player.level() != null && player.level().getServer() != null) {
             return player.level().getServer().getPlayerList().isOp(player.nameAndId());
         }
