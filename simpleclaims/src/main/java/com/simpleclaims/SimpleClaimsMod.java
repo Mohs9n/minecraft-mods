@@ -50,6 +50,11 @@ public class SimpleClaimsMod implements ModInitializer {
             ClaimManager.onPlayerDisconnect(handler.player.getUUID());
         });
 
+        // Show each player their own sidebar HUD (user, money placeholder, claim status)
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            ClaimSidebar.show(handler.player);
+        });
+
         // Wand left-click & block break prevention
         AttackBlockCallback.EVENT.register((player, level, hand, pos, direction) -> {
             if (level.isClientSide()) {

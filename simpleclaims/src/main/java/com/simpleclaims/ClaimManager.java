@@ -366,18 +366,12 @@ public class ClaimManager {
             return;
         }
 
-        // The new state has held steady long enough - confirm and announce it.
+        // The new state has held steady long enough - confirm it and refresh the sidebar.
+        // No more chat spam: the claim line in the player's HUD just updates in place.
         PENDING_CLAIM_STATE.remove(uuid);
         PENDING_CLAIM_TICKS.remove(uuid);
         PLAYER_CLAIM_TRACKER.put(uuid, currentClaimId);
-
-        if (current != null) {
-            player.sendSystemMessage(Component.literal("§6[Claims] §7Entering §e" + current.getOwnerName() + "§7's claim §8(" + current.getName() + ")"));
-        } else if (confirmedClaimId != null) {
-            Claim prev = getClaimById(confirmedClaimId);
-            String name = prev != null ? prev.getOwnerName() + "§7's" : "claimed";
-            player.sendSystemMessage(Component.literal("§6[Claims] §7Leaving §e" + name + " territory §7(Wilderness)"));
-        }
+        ClaimSidebar.updateClaimLine(player);
     }
 
     public static void onPlayerDisconnect(UUID uuid) {
