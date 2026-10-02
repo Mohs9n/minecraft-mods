@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "simpleclaims",
+  "version": "${version}",
+  "name": "Simple Claims",
+  "description": "A lightweight, server-friendly land claim and anti-grief mod for Minecraft 26.3 Fabric.",
+  "authors": [
+    "SimpleClaims Team"
+  ],
+  "contact": {},
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.simpleclaims.SimpleClaimsMod"
+    ]
+  },
+  "mixins": [
+    "simpleclaims.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "minecraft": "~26.3",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}

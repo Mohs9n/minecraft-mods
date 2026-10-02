@@ -1,0 +1,347 @@
+package com.simpleclaims.command;
+
+import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
+import com.simpleclaims.Claim;
+import com.simpleclaims.ClaimManager;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.Commands;
+import net.minecraft.commands.arguments.EntityArgument;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Prediction;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.ItemLore;
+
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+public class ClaimCommands {
+
+    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
+        dispatcher.register(Commands.literal("claim")
+                .executes(ctx -> {
+                    ServerPlayer player = ctx.getSource().getPlayerOrException();
+                    return showClaimInfo(player);
+                })
+                .then(Commands.literal("help")
+                        .executes(ctx -> {
+                            ServerPlayer player = ctx.getSource().getPlayerOrException();
+                            return showHelp(player);
+                        }))
+                .then(Commands.literal("wand")
+                        .executes(ctx -> {
+                            ServerPlayer player = ctx.getSource().getPlayerOrException();
+                            return giveWand(player);
+                        }))
+                .then(Commands.literal("pos1")
+                        .executes(ctx -> {
+                            ServerPlayer player = ctx.getSource().getPlayerOrException();
+                            ClaimManager.setPos1(player, player.blockPosition());
+                            return 1;
+                        }))
+                .then(Commands.literal("pos2")
+                        .executes(ctx -> {
+                            ServerPlayer player = ctx.getSource().getPlayerOrException();
+                            ClaimManager.setPos2(player, player.blockPosition());
+                            return 1;
+                        }))
+                .then(Commands.literal("create")
+                        .then(Commands.argument("name", StringArgumentType.word())
+                                .executes(ctx -> {
+                                    ServerPlayer player = ctx.getSource().getPlayerOrException();
+                                    String name = StringArgumentType.getString(ctx, "name");
+                                    return handleCreateFromSelection(player, name);
+                                })
+                                .then(Commands.argument("x1", IntegerArgumentType.integer())
+                                        .then(Commands.argument("z1", IntegerArgumentType.integer())
+                                                .then(Commands.argument("x2", IntegerArgumentType.integer())
+                                                        .then(Commands.argument("z2", IntegerArgumentType.integer())
+                                                                .executes(ctx -> {
+                                                                    ServerPlayer player = ctx.getSource().getPlayerOrException();
+                                                                    String name = StringArgumentType.getString(ctx, "name");
+                                                                    int x1 = IntegerArgumentType.getInteger(ctx, "x1");
+                                                                    int z1 = IntegerArgumentType.getInteger(ctx, "z1");
+                                                                    int x2 = IntegerArgumentType.getInteger(ctx, "x2");
+                                                                    int z2 = IntegerArgumentType.getInteger(ctx, "z2");
+                                                                    return handleCreateWithCoords(player, name, x1, z1, x2, z2);
+                                                                })))))))
+                .then(Commands.literal("trust")
+                        .then(Commands.argument("player", EntityArgument.player())
+                                .executes(ctx -> {
+                                    ServerPlayer owner = ctx.getSource().getPlayerOrException();
+                                    ServerPlayer target = EntityArgument.getPlayer(ctx, "player");
+                                    return handleTrust(owner, target.getUUID(), target.getName().getString());
+                                }))
+                        .then(Commands.argument("playerName", StringArgumentType.word())
+                                .executes(ctx -> {
+                                    ServerPlayer owner = ctx.getSource().getPlayerOrException();
+                                    String targetName = StringArgumentType.getString(ctx, "playerName");
+                                    if (owner.level().getServer() != null) {
+                                        ServerPlayer target = owner.level().getServer().getPlayerList().getPlayerByName(targetName);
+                                        if (target != null) {
+                                            return handleTrust(owner, target.getUUID(), target.getName().getString());
+                                        }
+                                    }
+                                    owner.sendSystemMessage(Component.literal("§c[SimpleClaims] Player §e" + targetName + " §cmust be online to trust!"));
+                                    return 0;
+                                })))
+                .then(Commands.literal("untrust")
+                        .then(Commands.argument("playerName", StringArgumentType.word())
+                                .executes(ctx -> {
+                                    ServerPlayer owner = ctx.getSource().getPlayerOrException();
+                                    String targetName = StringArgumentType.getString(ctx, "playerName");
+                                    return handleUntrust(owner, targetName);
+                                })))
+                .then(Commands.literal("list")
+                        .executes(ctx -> {
+                            ServerPlayer player = ctx.getSource().getPlayerOrException();
+                            return handleList(player);
+                        }))
+                .then(Commands.literal("info")
+                        .executes(ctx -> {
+                            ServerPlayer player = ctx.getSource().getPlayerOrException();
+                            return showClaimInfo(player);
+                        }))
+                .then(Commands.literal("delete")
+                        .executes(ctx -> {
+                            ServerPlayer player = ctx.getSource().getPlayerOrException();
+                            return handleDelete(player);
+                        }))
+                .then(Commands.literal("abandon")
+                        .executes(ctx -> {
+                            ServerPlayer player = ctx.getSource().getPlayerOrException();
+                            return handleDelete(player);
+                        }))
+        );
+    }
+
+    private static int showHelp(ServerPlayer player) {
+        player.sendSystemMessage(Component.literal("§6================ §e[SimpleClaims Help] §6================"));
+        player.sendSystemMessage(Component.literal("§e/claim wand §7- Gives a selection wand to set corners"));
+        player.sendSystemMessage(Component.literal("§e/claim pos1 §7- Sets Corner 1 to your position"));
+        player.sendSystemMessage(Component.literal("§e/claim pos2 §7- Sets Corner 2 to your position"));
+        player.sendSystemMessage(Component.literal("§e/claim create <name> §7- Claims the selected area (all Y levels)"));
+        player.sendSystemMessage(Component.literal("§e/claim trust <player> §7- Shares the claim with a friend"));
+        player.sendSystemMessage(Component.literal("§e/claim untrust <player> §7- Removes a shared friend"));
+        player.sendSystemMessage(Component.literal("§e/claim list §7- Lists all your claims"));
+        player.sendSystemMessage(Component.literal("§e/claim info §7- Shows info of claim you are standing in"));
+        player.sendSystemMessage(Component.literal("§e/claim delete §7- Deletes the claim you are standing in"));
+        player.sendSystemMessage(Component.literal("§6==================================================="));
+        return 1;
+    }
+
+    private static int giveWand(ServerPlayer player) {
+        ItemStack wand = new ItemStack(Items.GOLDEN_HOE);
+        wand.set(DataComponents.CUSTOM_NAME, Component.literal("§6§lClaim Wand"));
+        wand.set(DataComponents.LORE, new ItemLore(List.of(
+                Component.literal("§7Left-click block: §eSet Corner 1"),
+                Component.literal("§7Right-click block: §eSet Corner 2"),
+                Component.literal("§7Use §a/claim create <name> §7to finish!")
+        )));
+
+        if (!player.getInventory().add(wand)) {
+            player.drop(wand, false, Prediction.SERVER_ONLY);
+        }
+        player.sendSystemMessage(Component.literal("§a✔ Received Claim Wand! Left-click a block for Corner 1, Right-click for Corner 2."));
+        return 1;
+    }
+
+    private static int handleCreateFromSelection(ServerPlayer player, String name) {
+        String dim = ClaimManager.getDimensionId(player.level());
+        ClaimManager.PlayerSelection sel = ClaimManager.getSelection(player.getUUID(), dim);
+
+        if (!sel.isComplete()) {
+            player.sendSystemMessage(Component.literal("§c[SimpleClaims] Please set both corners first! Use §e/claim wand §cor §e/claim pos1 §cand §e/claim pos2§c."));
+            return 0;
+        }
+
+        return createClaimInternal(player, name, dim, sel.pos1.getX(), sel.pos1.getZ(), sel.pos2.getX(), sel.pos2.getZ());
+    }
+
+    private static int handleCreateWithCoords(ServerPlayer player, String name, int x1, int z1, int x2, int z2) {
+        String dim = ClaimManager.getDimensionId(player.level());
+        return createClaimInternal(player, name, dim, x1, z1, x2, z2);
+    }
+
+    private static int createClaimInternal(ServerPlayer player, String name, String dim, int x1, int z1, int x2, int z2) {
+        int minX = Math.min(x1, x2);
+        int maxX = Math.max(x1, x2);
+        int minZ = Math.min(z1, z2);
+        int maxZ = Math.max(z1, z2);
+
+        int widthX = maxX - minX + 1;
+        int widthZ = maxZ - minZ + 1;
+
+        if (widthX < 3 || widthZ < 3) {
+            player.sendSystemMessage(Component.literal("§c[SimpleClaims] Claims must be at least 3x3 blocks wide!"));
+            return 0;
+        }
+
+        // Check overlaps
+        Claim overlap = ClaimManager.findOverlappingClaim(dim, minX, minZ, maxX, maxZ);
+        if (overlap != null) {
+            player.sendSystemMessage(Component.literal("§c[SimpleClaims] Cannot create claim: Overlaps with §e" + overlap.getOwnerName() + "§c's claim (§f" + overlap.getName() + "§c)!"));
+            return 0;
+        }
+
+        Claim claim = new Claim(null, name, dim, minX, minZ, maxX, maxZ, player.getUUID(), player.getName().getString());
+        ServerLevel sLevel = (ServerLevel) player.level();
+        if (ClaimManager.addClaim(sLevel, claim)) {
+            ClaimManager.clearSelection(player.getUUID());
+            player.sendSystemMessage(Component.literal("§a✔ Created claim §e\"" + name + "\"§a!"));
+            player.sendSystemMessage(Component.literal("§7Area: §f" + widthX + "x" + widthZ + " §7(" + claim.getArea() + " blocks) from bedrock to sky limit!"));
+            player.sendSystemMessage(Component.literal("§7Use §b/claim trust <player> §7to share this claim with friends."));
+            return 1;
+        } else {
+            player.sendSystemMessage(Component.literal("§c[SimpleClaims] Failed to save claim."));
+            return 0;
+        }
+    }
+
+    private static int handleTrust(ServerPlayer owner, UUID targetUuid, String targetName) {
+        Claim claim = getRelevantClaim(owner);
+        if (claim == null) {
+            owner.sendSystemMessage(Component.literal("§c[SimpleClaims] You must be standing in your claim (or have at least one claim) to trust players!"));
+            return 0;
+        }
+
+        if (!claim.isOwner(owner.getUUID()) && !ClaimManager.isOpOrAdmin(owner)) {
+            owner.sendSystemMessage(Component.literal("§c[SimpleClaims] Only the owner of this claim can trust players!"));
+            return 0;
+        }
+
+        if (claim.isOwner(targetUuid)) {
+            owner.sendSystemMessage(Component.literal("§c[SimpleClaims] You are already the owner of this claim!"));
+            return 0;
+        }
+
+        claim.addMember(targetUuid, targetName);
+        ClaimManager.save((ServerLevel) owner.level());
+
+        owner.sendSystemMessage(Component.literal("§a✔ Trusted §e" + targetName + " §ain claim §6" + claim.getName() + "§a! They now have full build & chest access."));
+        if (owner.level().getServer() != null) {
+            ServerPlayer targetPlayer = owner.level().getServer().getPlayerList().getPlayer(targetUuid);
+            if (targetPlayer != null) {
+                targetPlayer.sendSystemMessage(Component.literal("§a✔ You were trusted in §e" + owner.getName().getString() + "§a's claim (§6" + claim.getName() + "§a)!"));
+            }
+        }
+        return 1;
+    }
+
+    private static int handleUntrust(ServerPlayer owner, String targetName) {
+        Claim claim = getRelevantClaim(owner);
+        if (claim == null) {
+            owner.sendSystemMessage(Component.literal("§c[SimpleClaims] You must be standing in your claim to untrust players!"));
+            return 0;
+        }
+
+        if (!claim.isOwner(owner.getUUID()) && !ClaimManager.isOpOrAdmin(owner)) {
+            owner.sendSystemMessage(Component.literal("§c[SimpleClaims] Only the owner of this claim can untrust players!"));
+            return 0;
+        }
+
+        UUID targetUuid = null;
+        for (Map.Entry<String, String> entry : claim.getMembers().entrySet()) {
+            if (entry.getValue().equalsIgnoreCase(targetName)) {
+                try {
+                    targetUuid = UUID.fromString(entry.getKey());
+                } catch (IllegalArgumentException ignored) {}
+                break;
+            }
+        }
+
+        if (targetUuid == null) {
+            owner.sendSystemMessage(Component.literal("§c[SimpleClaims] Player §e" + targetName + " §cis not trusted in this claim."));
+            return 0;
+        }
+
+        claim.removeMember(targetUuid);
+        ClaimManager.save((ServerLevel) owner.level());
+        owner.sendSystemMessage(Component.literal("§e✔ Removed §f" + targetName + " §efrom claim §6" + claim.getName() + "§e."));
+        return 1;
+    }
+
+    private static int handleList(ServerPlayer player) {
+        List<Claim> claims = ClaimManager.getClaimsByOwner(player.getUUID());
+        if (claims.isEmpty()) {
+            player.sendSystemMessage(Component.literal("§e[SimpleClaims] You do not own any claims yet. Use §a/claim wand §cto create one!"));
+            return 1;
+        }
+
+        player.sendSystemMessage(Component.literal("§6================ §e[Your Claims (" + claims.size() + ")] §6================"));
+        for (Claim c : claims) {
+            player.sendSystemMessage(Component.literal("§8• §e" + c.getName() + " §7(" + c.getDimension() + "): §f("
+                    + c.getMinX() + ", " + c.getMinZ() + ") §7to §f(" + c.getMaxX() + ", " + c.getMaxZ() + ") §8[" + c.getArea() + " blocks]"));
+            if (!c.getMembers().isEmpty()) {
+                player.sendSystemMessage(Component.literal("   §7Trusted: §a" + String.join(", ", c.getMembers().values())));
+            }
+        }
+        player.sendSystemMessage(Component.literal("§6================================================="));
+        return 1;
+    }
+
+    private static int showClaimInfo(ServerPlayer player) {
+        Claim claim = ClaimManager.getClaimAt(player.level(), player.blockPosition());
+        if (claim == null) {
+            player.sendSystemMessage(Component.literal("§7[SimpleClaims] You are currently in the §2Wilderness §7(Unclaimed land)."));
+            return 1;
+        }
+
+        player.sendSystemMessage(Component.literal("§6================ §e[Claim Info] §6================"));
+        player.sendSystemMessage(Component.literal("§7Name: §f" + claim.getName()));
+        player.sendSystemMessage(Component.literal("§7Owner: §e" + claim.getOwnerName()));
+        player.sendSystemMessage(Component.literal("§7Bounds: §f(" + claim.getMinX() + ", " + claim.getMinZ() + ") §7to §f(" + claim.getMaxX() + ", " + claim.getMaxZ() + ")"));
+        player.sendSystemMessage(Component.literal("§7Height: §aAll Y levels (Bedrock to Sky)"));
+        player.sendSystemMessage(Component.literal("§7Size: §b" + claim.getWidthX() + "x" + claim.getWidthZ() + " §7(" + claim.getArea() + " blocks)"));
+        if (!claim.getMembers().isEmpty()) {
+            player.sendSystemMessage(Component.literal("§7Trusted Members: §a" + String.join(", ", claim.getMembers().values())));
+        } else {
+            player.sendSystemMessage(Component.literal("§7Trusted Members: §8None"));
+        }
+        player.sendSystemMessage(Component.literal("§6==============================================="));
+        return 1;
+    }
+
+    private static int handleDelete(ServerPlayer player) {
+        Claim claim = ClaimManager.getClaimAt(player.level(), player.blockPosition());
+        if (claim == null) {
+            player.sendSystemMessage(Component.literal("§c[SimpleClaims] You must be standing in the claim you want to delete!"));
+            return 0;
+        }
+
+        if (!claim.isOwner(player.getUUID()) && !ClaimManager.isOpOrAdmin(player)) {
+            player.sendSystemMessage(Component.literal("§c[SimpleClaims] You do not have permission to delete §e" + claim.getOwnerName() + "§c's claim!"));
+            return 0;
+        }
+
+        String claimName = claim.getName();
+        ServerLevel sLevel = (ServerLevel) player.level();
+        if (ClaimManager.removeClaim(sLevel, claim)) {
+            player.sendSystemMessage(Component.literal("§a✔ Successfully deleted claim §e\"" + claimName + "\"§a. The land is now wilderness."));
+            return 1;
+        } else {
+            player.sendSystemMessage(Component.literal("§c[SimpleClaims] Failed to delete claim."));
+            return 0;
+        }
+    }
+
+    private static Claim getRelevantClaim(ServerPlayer player) {
+        // Try claim at current position first
+        Claim claim = ClaimManager.getClaimAt(player.level(), player.blockPosition());
+        if (claim != null) return claim;
+
+        // Otherwise if player owns exactly 1 claim, return that one
+        List<Claim> owned = ClaimManager.getClaimsByOwner(player.getUUID());
+        if (owned.size() == 1) {
+            return owned.get(0);
+        }
+        return null;
+    }
+}

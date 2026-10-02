@@ -9,4 +9,6 @@ pluginManagement {
     }
 }
 
-rootProject.name = 'simple-chest-shop'
+rootProject.name = 'minecraft-mods'
+include 'simplechestshop'
+include 'simpleclaims'
