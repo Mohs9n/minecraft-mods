@@ -1,0 +1,133 @@
+package com.simplechestshop;
+
+import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
+import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
+import net.fabricmc.fabric.api.event.player.UseBlockCallback;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.Container;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.level.block.ChestBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+public class SimpleChestShopMod implements ModInitializer {
+    public static final String MOD_ID = "simplechestshop";
+    public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
+
+    @Override
+    public void onInitialize() {
+        LOGGER.info("Initializing Simple Chest Shop mod for Minecraft 26.3...");
+
+        // Load saved shops on server start
+        ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+            ChestShopData.load(server.overworld());
+            LOGGER.info("Simple Chest Shop data loaded.");
+        });
+
+        // Handle right-click interaction on chest (Buying or Opening)
+        UseBlockCallback.EVENT.register((player, level, hand, hitResult) -> {
+            if (hand != InteractionHand.MAIN_HAND) {
+                return InteractionResult.PASS;
+            }
+
+            BlockPos pos = hitResult.getBlockPos();
+            BlockState state = level.getBlockState(pos);
+
+            if (!(state.getBlock() instanceof ChestBlock)) {
+                return InteractionResult.PASS;
+            }
+
+            if (level.isClientSide()) {
+                return InteractionResult.PASS;
+            }
+
+            ServerLevel serverLevel = (ServerLevel) level;
+            ShopTrade trade = ChestShopManager.getShopTrade(level, pos);
+
+            if (trade == null || !trade.isValid()) {
+                // If there's no active shop, normal chest behavior
+                return InteractionResult.PASS;
+            }
+
+            ChestShopData.ShopRecord record = ChestShopData.getRecord(pos);
+
+            // Auto-register owner if not yet registered
+            if (record == null) {
+                ChestShopData.register(serverLevel, pos, player.getUUID(), player.getName().getString());
+                record = ChestShopData.getRecord(pos);
+                player.sendSystemMessage(Component.literal("§a[Chest Shop] Shop registered! You are now the owner of this shop."));
+            }
+
+            boolean isOwner = player.getUUID().toString().equals(record.ownerUuid);
+
+            if (isOwner) {
+                // Owner is opening the chest
+                if (player.isShiftKeyDown()) {
+                    // Sneak right-click gives shop summary
+                    Container container = ChestShopManager.getChestContainer(level, pos);
+                    ChestShopManager.showShopInfo(player, trade, container, record.ownerName);
+                    return InteractionResult.SUCCESS;
+                }
+                // Allow owner to open the chest GUI normally to manage stock/earnings
+                return InteractionResult.PASS;
+            }
+
+            // Customer interaction (Buying or inspecting)
+            return ChestShopManager.tryPurchase(player, level, pos, hand);
+        });
+
+        // Handle left-click interaction (punching chest for shop details)
+        AttackBlockCallback.EVENT.register((player, level, hand, pos, direction) -> {
+            if (level.isClientSide() || hand != InteractionHand.MAIN_HAND) {
+                return InteractionResult.PASS;
+            }
+
+            BlockState state = level.getBlockState(pos);
+            if (!(state.getBlock() instanceof ChestBlock)) {
+                return InteractionResult.PASS;
+            }
+
+            ShopTrade trade = ChestShopManager.getShopTrade(level, pos);
+            if (trade != null && trade.isValid()) {
+                Container container = ChestShopManager.getChestContainer(level, pos);
+                ChestShopData.ShopRecord record = ChestShopData.getRecord(pos);
+                String ownerName = record != null ? record.ownerName : "Unknown";
+                ChestShopManager.showShopInfo(player, trade, container, ownerName);
+                return InteractionResult.SUCCESS;
+            }
+
+            return InteractionResult.PASS;
+        });
+
+        // Prevent unauthorized breaking of shop chests
+        PlayerBlockBreakEvents.BEFORE.register((level, player, pos, state, blockEntity) -> {
+            if (level.isClientSide()) {
+                return true;
+            }
+
+            if (!(state.getBlock() instanceof ChestBlock)) {
+                return true;
+            }
+
+            ShopTrade trade = ChestShopManager.getShopTrade(level, pos);
+            if (trade != null && trade.isValid()) {
+                ChestShopData.ShopRecord record = ChestShopData.getRecord(pos);
+                if (record != null && !player.getUUID().toString().equals(record.ownerUuid)) {
+                    if (!player.isCreative()) {
+                        player.sendSystemMessage(Component.literal("§c[Chest Shop] This shop belongs to " + record.ownerName + "! You cannot break it."));
+                        return false;
+                    }
+                }
+                ChestShopData.remove((ServerLevel) level, pos);
+            }
+
+            return true;
+        });
+    }
+}

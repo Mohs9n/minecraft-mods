@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "simplechestshop",
+  "version": "${version}",
+  "name": "Simple Chest Shop",
+  "description": "A lightweight vanilla chest shop mod using named paper for pricing and automated shop transactions.",
+  "authors": [
+    "Antigravity"
+  ],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/simplechestshop/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.simplechestshop.SimpleChestShopMod"
+    ]
+  },
+  "mixins": [
+    "simplechestshop.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": ">=26.3",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}
