@@ -9,10 +9,14 @@
   ],
   "contact": {},
   "license": "MIT",
+  "icon": "assets/simpleclaims/icon.png",
   "environment": "*",
   "entrypoints": {
     "main": [
       "com.simpleclaims.SimpleClaimsMod"
+    ],
+    "client": [
+      "com.simpleclaims.client.SimpleClaimsClientMod"
     ]
   },
   "mixins": [

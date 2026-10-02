@@ -1,19 +1,21 @@
 package com.simpleclaims;
 
 import com.simpleclaims.command.ClaimCommands;
+import com.simpleclaims.network.OpenClaimNameScreenPayload;
+import com.simpleclaims.network.SubmitClaimNamePayload;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.*;
+import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.entity.decoration.ArmorStand;
-import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import org.slf4j.Logger;
@@ -27,9 +29,20 @@ public class SimpleClaimsMod implements ModInitializer {
     public void onInitialize() {
         LOGGER.info("Initializing Simple Claims mod for Minecraft 26.3...");
 
+        // Custom claim-naming screen networking: register the payload types on both the
+        // S2C ("open the screen") and C2S ("here's the name I typed") channels, and handle
+        // the submission server-side. The client never needs to be trusted - this still
+        // runs through the exact same validation as the text command would.
+        PayloadTypeRegistry.clientboundPlay().register(OpenClaimNameScreenPayload.TYPE, OpenClaimNameScreenPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SubmitClaimNamePayload.TYPE, SubmitClaimNamePayload.CODEC);
+        ServerPlayNetworking.registerGlobalReceiver(SubmitClaimNamePayload.TYPE, (payload, context) -> {
+            ClaimCommands.createClaimFromScreen(context.player(), payload.name());
+        });
+
         // Load saved claims on server start
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             ClaimManager.load(server.overworld());
+            ClaimManager.reapplyForceLoading(server);
             LOGGER.info("Loaded " + ClaimManager.getAllClaims().size() + " land claims.");
         });
 
@@ -48,6 +61,11 @@ public class SimpleClaimsMod implements ModInitializer {
         // Clean up disconnected players
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             ClaimManager.onPlayerDisconnect(handler.player.getUUID());
+        });
+
+        // Show each player their own sidebar HUD (user, money placeholder, claim status)
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            ClaimSidebar.show(handler.player);
         });
 
         // Wand left-click & block break prevention
@@ -82,6 +100,10 @@ public class SimpleClaimsMod implements ModInitializer {
             ItemStack held = player.getItemInHand(hand);
 
             if (hand == InteractionHand.MAIN_HAND && isClaimWand(held)) {
+                if (player.isShiftKeyDown() && player instanceof ServerPlayer sp) {
+                    com.simpleclaims.gui.ClaimListMenu.open(sp);
+                    return InteractionResult.SUCCESS;
+                }
                 ClaimManager.setPos2(player, pos);
                 return InteractionResult.SUCCESS;
             }
@@ -104,6 +126,21 @@ public class SimpleClaimsMod implements ModInitializer {
                 String owner = claim != null ? claim.getOwnerName() : "another player";
                 player.sendSystemMessage(Component.literal("§c[SimpleClaims] You cannot build or interact in §e" + owner + "§c's claim!"));
                 return InteractionResult.FAIL;
+            }
+
+            return InteractionResult.PASS;
+        });
+
+        // Sneak + right-click the wand in open air (no block targeted) also opens the GUI
+        UseItemCallback.EVENT.register((player, level, hand) -> {
+            if (level.isClientSide() || hand != InteractionHand.MAIN_HAND) {
+                return InteractionResult.PASS;
+            }
+
+            ItemStack held = player.getItemInHand(hand);
+            if (isClaimWand(held) && player.isShiftKeyDown() && player instanceof ServerPlayer sp) {
+                com.simpleclaims.gui.ClaimListMenu.open(sp);
+                return InteractionResult.SUCCESS;
             }
 
             return InteractionResult.PASS;
@@ -141,13 +178,14 @@ public class SimpleClaimsMod implements ModInitializer {
             return InteractionResult.PASS;
         });
 
-        // Protect item frames and armor stands from interaction (taking items/armor)
+        // Protect animals, villagers, item frames, armor stands, and vehicles from
+        // interaction (leashing, shearing, saddling, riding off with, trading, looting)
         UseEntityCallback.EVENT.register((player, level, hand, entity, hitResult) -> {
             if (level.isClientSide()) {
                 return InteractionResult.PASS;
             }
 
-            if (entity instanceof ItemFrame || entity instanceof ArmorStand) {
+            if (ClaimManager.isProtectedEntityType(entity)) {
                 if (!ClaimManager.canPlayerModify(player, level, entity.blockPosition())) {
                     Claim claim = ClaimManager.getClaimAt(level, entity.blockPosition());
                     String owner = claim != null ? claim.getOwnerName() : "another player";
@@ -161,10 +199,6 @@ public class SimpleClaimsMod implements ModInitializer {
     }
 
     private static boolean isClaimWand(ItemStack stack) {
-        if (stack == null || stack.isEmpty() || stack.getItem() != Items.GOLDEN_HOE) {
-            return false;
-        }
-        Component name = stack.get(net.minecraft.core.component.DataComponents.CUSTOM_NAME);
-        return name != null && name.getString().contains("Claim Wand");
+        return ClaimManager.isClaimWand(stack);
     }
 }

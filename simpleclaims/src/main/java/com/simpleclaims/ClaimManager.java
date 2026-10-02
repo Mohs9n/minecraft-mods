@@ -1,7 +1,12 @@
 package com.simpleclaims;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
@@ -9,9 +14,14 @@ import net.minecraft.world.entity.TamableAnimal;
 import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.world.entity.decoration.painting.Painting;
-import net.minecraft.world.entity.npc.villager.Villager;
+import net.minecraft.world.entity.npc.villager.AbstractVillager;
 import net.minecraft.world.entity.animal.Animal;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.vehicle.boat.AbstractBoat;
+import net.minecraft.world.entity.vehicle.minecart.AbstractMinecart;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.ItemLore;
 import net.minecraft.world.level.Level;
 
 import java.util.*;
@@ -21,6 +31,45 @@ public class ClaimManager {
     private static final Map<UUID, PlayerSelection> SELECTIONS = new HashMap<>();
     private static final Map<UUID, String> PLAYER_CLAIM_TRACKER = new HashMap<>();
     private static boolean loaded = false;
+
+    // Per-dimension chunk-bucket spatial index: dimension -> chunkKey -> claim ids touching
+    // that chunk. Lets getClaimAt/findOverlappingClaim check only the handful of claims near
+    // a point instead of scanning every claim on the server on every block interaction/tick.
+    private static final Map<String, Map<Long, Set<String>>> CHUNK_INDEX = new HashMap<>();
+
+    // Single source of truth for the wand's exact name/lore. isClaimWand() requires an
+    // exact match on both (not a name substring), so renaming an arbitrary golden hoe in
+    // an anvil can never forge wand powers - anvils can only edit CUSTOM_NAME, not LORE.
+    public static final Component WAND_NAME = Component.literal("§6§lClaim Wand");
+    public static final List<Component> WAND_LORE = List.of(
+            Component.literal("§7Left-click block: §eSet Corner 1"),
+            Component.literal("§7Right-click block: §eSet Corner 2"),
+            Component.literal("§7Use §a/claim create <name> §7to finish!")
+    );
+
+    public static boolean isClaimWand(ItemStack stack) {
+        if (stack == null || stack.isEmpty() || stack.getItem() != Items.GOLDEN_HOE) {
+            return false;
+        }
+        Component name = stack.get(DataComponents.CUSTOM_NAME);
+        if (name == null || !name.getString().equals(WAND_NAME.getString())) {
+            return false;
+        }
+        ItemLore lore = stack.get(DataComponents.LORE);
+        if (lore == null) {
+            return false;
+        }
+        List<Component> lines = lore.lines();
+        if (lines.size() != WAND_LORE.size()) {
+            return false;
+        }
+        for (int i = 0; i < lines.size(); i++) {
+            if (!lines.get(i).getString().equals(WAND_LORE.get(i).getString())) {
+                return false;
+            }
+        }
+        return true;
+    }
 
     public static class PlayerSelection {
         public BlockPos pos1;
@@ -58,10 +107,46 @@ public class ClaimManager {
     public static synchronized void load(ServerLevel level) {
         List<Claim> list = ClaimStorage.load(level);
         CLAIMS.clear();
+        CHUNK_INDEX.clear();
         for (Claim c : list) {
             CLAIMS.put(c.getId(), c);
+            indexClaim(c);
         }
         loaded = true;
+    }
+
+    private static long chunkKey(int chunkX, int chunkZ) {
+        return (((long) chunkX) << 32) | (chunkZ & 0xFFFFFFFFL);
+    }
+
+    private static void indexClaim(Claim claim) {
+        Map<Long, Set<String>> dimIndex = CHUNK_INDEX.computeIfAbsent(claim.getDimension(), d -> new HashMap<>());
+        int minCx = claim.getMinX() >> 4, maxCx = claim.getMaxX() >> 4;
+        int minCz = claim.getMinZ() >> 4, maxCz = claim.getMaxZ() >> 4;
+        for (int cx = minCx; cx <= maxCx; cx++) {
+            for (int cz = minCz; cz <= maxCz; cz++) {
+                dimIndex.computeIfAbsent(chunkKey(cx, cz), k -> new HashSet<>()).add(claim.getId());
+            }
+        }
+    }
+
+    private static void unindexClaim(Claim claim) {
+        Map<Long, Set<String>> dimIndex = CHUNK_INDEX.get(claim.getDimension());
+        if (dimIndex == null) return;
+        int minCx = claim.getMinX() >> 4, maxCx = claim.getMaxX() >> 4;
+        int minCz = claim.getMinZ() >> 4, maxCz = claim.getMaxZ() >> 4;
+        for (int cx = minCx; cx <= maxCx; cx++) {
+            for (int cz = minCz; cz <= maxCz; cz++) {
+                long key = chunkKey(cx, cz);
+                Set<String> ids = dimIndex.get(key);
+                if (ids != null) {
+                    ids.remove(claim.getId());
+                    if (ids.isEmpty()) {
+                        dimIndex.remove(key);
+                    }
+                }
+            }
+        }
     }
 
     public static synchronized void save(ServerLevel level) {
@@ -96,8 +181,13 @@ public class ClaimManager {
     }
 
     public static synchronized Claim getClaimAt(String dimension, int x, int z) {
-        for (Claim c : CLAIMS.values()) {
-            if (c.contains(dimension, x, z)) {
+        Map<Long, Set<String>> dimIndex = CHUNK_INDEX.get(dimension);
+        if (dimIndex == null) return null;
+        Set<String> ids = dimIndex.get(chunkKey(x >> 4, z >> 4));
+        if (ids == null) return null;
+        for (String id : ids) {
+            Claim c = CLAIMS.get(id);
+            if (c != null && c.contains(dimension, x, z)) {
                 return c;
             }
         }
@@ -110,9 +200,24 @@ public class ClaimManager {
     }
 
     public static synchronized Claim findOverlappingClaim(String dimension, int x1, int z1, int x2, int z2) {
-        for (Claim c : CLAIMS.values()) {
-            if (c.overlaps(dimension, x1, z1, x2, z2)) {
-                return c;
+        Map<Long, Set<String>> dimIndex = CHUNK_INDEX.get(dimension);
+        if (dimIndex == null) return null;
+        int minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
+        int minZ = Math.min(z1, z2), maxZ = Math.max(z1, z2);
+        int minCx = minX >> 4, maxCx = maxX >> 4;
+        int minCz = minZ >> 4, maxCz = maxZ >> 4;
+        Set<String> checked = new HashSet<>();
+        for (int cx = minCx; cx <= maxCx; cx++) {
+            for (int cz = minCz; cz <= maxCz; cz++) {
+                Set<String> ids = dimIndex.get(chunkKey(cx, cz));
+                if (ids == null) continue;
+                for (String id : ids) {
+                    if (!checked.add(id)) continue;
+                    Claim c = CLAIMS.get(id);
+                    if (c != null && c.overlaps(dimension, x1, z1, x2, z2)) {
+                        return c;
+                    }
+                }
             }
         }
         return null;
@@ -125,6 +230,7 @@ public class ClaimManager {
             return false;
         }
         CLAIMS.put(claim.getId(), claim);
+        indexClaim(claim);
         save(level);
         return true;
     }
@@ -133,6 +239,10 @@ public class ClaimManager {
         if (claim == null) return false;
         boolean removed = (CLAIMS.remove(claim.getId()) != null);
         if (removed) {
+            if (claim.isForceLoaded()) {
+                applyForceLoad(level, claim, false);
+            }
+            unindexClaim(claim);
             save(level);
         }
         return removed;
@@ -142,13 +252,43 @@ public class ClaimManager {
         return getClaimAt(level, pos) != null;
     }
 
+    // Only real server operators bypass claim protection. Creative mode is just a gamemode
+    // setting - any regular player can end up in it (a build server default, a minigame
+    // lobby, a reward plugin), so treating it as "is admin" would let them break/place/
+    // interact anywhere, in anyone's claim, for free. Op status is the only thing that
+    // actually means "this account is trusted by the server owner."
     public static boolean isOpOrAdmin(Player player) {
         if (player == null) return false;
-        if (player.isCreative()) return true;
         if (player.level() != null && player.level().getServer() != null) {
             return player.level().getServer().getPlayerList().isOp(player.nameAndId());
         }
         return false;
+    }
+
+    // Inspired by FTB Chunks' explicit "bypass_protection" toggle: an op doesn't silently
+    // ignore claim protection just by having op status (that's how admins accidentally grief
+    // builds while just playing normally). They have to deliberately turn bypass on with
+    // /claim adminbypass, and it resets on disconnect so it's never left on by accident.
+    // This only gates the PASSIVE world-interaction bypass (build/break/interact/damage) -
+    // deliberate admin actions like GUI/command claim deletion still just check isOpOrAdmin.
+    private static final Set<UUID> ADMIN_BYPASS_ENABLED = new HashSet<>();
+
+    public static boolean isAdminBypassActive(Player player) {
+        return player != null && isOpOrAdmin(player) && ADMIN_BYPASS_ENABLED.contains(player.getUUID());
+    }
+
+    /**
+     * Toggles the calling op's admin bypass. Returns the new state, or null if the player
+     * isn't actually an operator (callers should reject the request in that case).
+     */
+    public static Boolean toggleAdminBypass(Player player) {
+        if (player == null || !isOpOrAdmin(player)) return null;
+        UUID uuid = player.getUUID();
+        if (ADMIN_BYPASS_ENABLED.remove(uuid)) {
+            return false;
+        }
+        ADMIN_BYPASS_ENABLED.add(uuid);
+        return true;
     }
 
     public static boolean canPlayerModify(Player player, Level level, BlockPos pos) {
@@ -159,14 +299,33 @@ public class ClaimManager {
         if (player == null) {
             return false;
         }
-        if (isOpOrAdmin(player)) {
-            return true; // Admin / Operator bypass
+        if (isAdminBypassActive(player)) {
+            return true; // Admin bypass explicitly enabled
         }
         return claim.canAccess(player);
     }
 
     public static boolean canPlayerInteract(Player player, Level level, BlockPos pos) {
         return canPlayerModify(player, level, pos);
+    }
+
+    /**
+     * Entities a stranger can neither damage nor interact with inside someone's claim:
+     * tamed/wild animals and villagers (no leashing, shearing, saddling, milking, feeding,
+     * breeding, or trading away someone's livestock/trade hall), armor stands and item
+     * frames (no stripping their contents), paintings, and boats/minecarts (no riding off
+     * with or looting someone's parked vehicle or chest minecart). Hostile mobs are
+     * deliberately excluded - they're always fair game to fight even inside a claim.
+     */
+    public static boolean isProtectedEntityType(Entity target) {
+        return target instanceof Animal
+                || target instanceof TamableAnimal
+                || target instanceof AbstractVillager
+                || target instanceof ArmorStand
+                || target instanceof ItemFrame
+                || target instanceof Painting
+                || target instanceof AbstractBoat
+                || target instanceof AbstractMinecart;
     }
 
     public static boolean canPlayerDamageEntity(Player player, Entity target) {
@@ -179,14 +338,10 @@ public class ClaimManager {
         if (player == null) {
             return false;
         }
-        if (isOpOrAdmin(player)) {
+        if (isAdminBypassActive(player)) {
             return true;
         }
-
-        // Hostile monsters are not protected
-        if (!(target instanceof Animal) && !(target instanceof Villager)
-                && !(target instanceof TamableAnimal) && !(target instanceof ArmorStand)
-                && !(target instanceof ItemFrame) && !(target instanceof Painting)) {
+        if (!isProtectedEntityType(target)) {
             return true;
         }
 
@@ -227,28 +382,148 @@ public class ClaimManager {
 
     // --- Border Notifications ---
 
+    // Standing right on a claim's edge can flicker the detected claim in/out every tick.
+    // A transition is only announced once the new state has held steady for this many
+    // ticks (20 ticks = 1 second), so border jitter no longer spams chat.
+    private static final int BORDER_DEBOUNCE_TICKS = 10;
+    private static final Map<UUID, String> PENDING_CLAIM_STATE = new HashMap<>();
+    private static final Map<UUID, Integer> PENDING_CLAIM_TICKS = new HashMap<>();
+
     public static void onPlayerTick(ServerPlayer player) {
         UUID uuid = player.getUUID();
         Claim current = getClaimAt(player.level(), player.blockPosition());
         String currentClaimId = current != null ? current.getId() : null;
-        String prevClaimId = PLAYER_CLAIM_TRACKER.get(uuid);
+        String confirmedClaimId = PLAYER_CLAIM_TRACKER.get(uuid);
 
-        if (!Objects.equals(currentClaimId, prevClaimId)) {
-            PLAYER_CLAIM_TRACKER.put(uuid, currentClaimId);
-            if (current != null) {
-                // Entered a claim
-                player.sendSystemMessage(Component.literal("§6[Claims] §7Entering §e" + current.getOwnerName() + "§7's claim §8(" + current.getName() + ")"));
-            } else if (prevClaimId != null) {
-                // Left a claim
-                Claim prev = getClaimById(prevClaimId);
-                String name = prev != null ? prev.getOwnerName() + "§7's" : "claimed";
-                player.sendSystemMessage(Component.literal("§6[Claims] §7Leaving §e" + name + " territory §7(Wilderness)"));
-            }
+        if (Objects.equals(currentClaimId, confirmedClaimId)) {
+            // Back to the last confirmed state - cancel any pending transition (this is
+            // exactly what absorbs border-line jitter instead of announcing it).
+            PENDING_CLAIM_STATE.remove(uuid);
+            PENDING_CLAIM_TICKS.remove(uuid);
+            return;
         }
+
+        String pendingClaimId = PENDING_CLAIM_STATE.get(uuid);
+        if (!Objects.equals(currentClaimId, pendingClaimId)) {
+            // A new candidate state - start (or restart) the debounce timer for it.
+            PENDING_CLAIM_STATE.put(uuid, currentClaimId);
+            PENDING_CLAIM_TICKS.put(uuid, 1);
+            return;
+        }
+
+        int heldTicks = PENDING_CLAIM_TICKS.merge(uuid, 1, Integer::sum);
+        if (heldTicks < BORDER_DEBOUNCE_TICKS) {
+            return;
+        }
+
+        // The new state has held steady long enough - confirm it and refresh the sidebar.
+        // No more chat spam: the claim line in the player's HUD just updates in place.
+        PENDING_CLAIM_STATE.remove(uuid);
+        PENDING_CLAIM_TICKS.remove(uuid);
+        PLAYER_CLAIM_TRACKER.put(uuid, currentClaimId);
+        ClaimSidebar.updateClaimLine(player);
     }
 
     public static void onPlayerDisconnect(UUID uuid) {
         PLAYER_CLAIM_TRACKER.remove(uuid);
+        PENDING_CLAIM_STATE.remove(uuid);
+        PENDING_CLAIM_TICKS.remove(uuid);
         SELECTIONS.remove(uuid);
+        ADMIN_BYPASS_ENABLED.remove(uuid);
+    }
+
+    // --- Claim Limits (inspired by FTB Chunks' claim-power system) ---
+
+    // How much land one player can own at once. Prevents a single player from claiming the
+    // whole map. Server operators are exempt (checked separately by callers via isOpOrAdmin).
+    public static final int MAX_CLAIMS_PER_PLAYER = 10;
+    public static final long MAX_TOTAL_CLAIM_AREA_PER_PLAYER = 50_000L;
+
+    public static final class ClaimLimitCheck {
+        public final boolean allowed;
+        public final int ownedClaims;
+        public final long ownedArea;
+        public final String reason;
+
+        private ClaimLimitCheck(boolean allowed, int ownedClaims, long ownedArea, String reason) {
+            this.allowed = allowed;
+            this.ownedClaims = ownedClaims;
+            this.ownedArea = ownedArea;
+            this.reason = reason;
+        }
+    }
+
+    public static ClaimLimitCheck checkClaimLimit(UUID ownerUuid, long additionalArea) {
+        List<Claim> owned = getClaimsByOwner(ownerUuid);
+        long ownedArea = 0L;
+        for (Claim c : owned) {
+            ownedArea += c.getArea();
+        }
+
+        if (owned.size() >= MAX_CLAIMS_PER_PLAYER) {
+            return new ClaimLimitCheck(false, owned.size(), ownedArea,
+                    "You already own the maximum of " + MAX_CLAIMS_PER_PLAYER + " claims!");
+        }
+        if (ownedArea + additionalArea > MAX_TOTAL_CLAIM_AREA_PER_PLAYER) {
+            return new ClaimLimitCheck(false, owned.size(), ownedArea,
+                    "That would put you over your " + MAX_TOTAL_CLAIM_AREA_PER_PLAYER + "-block claim limit (currently using "
+                            + ownedArea + ")!");
+        }
+        return new ClaimLimitCheck(true, owned.size(), ownedArea, null);
+    }
+
+    // --- Force-Loading (inspired by FTB Chunks' chunk force-loading) ---
+
+    // Keeps a small server up without someone force-loading the whole map and tanking TPS.
+    public static final int MAX_FORCELOADED_CHUNKS_PER_PLAYER = 16;
+
+    public static long countForceLoadedChunks(UUID ownerUuid) {
+        long total = 0;
+        for (Claim c : getClaimsByOwner(ownerUuid)) {
+            if (c.isForceLoaded()) {
+                total += chunkCount(c);
+            }
+        }
+        return total;
+    }
+
+    private static long chunkCount(Claim c) {
+        long chunksX = (long) (c.getMaxX() >> 4) - (c.getMinX() >> 4) + 1;
+        long chunksZ = (long) (c.getMaxZ() >> 4) - (c.getMinZ() >> 4) + 1;
+        return chunksX * chunksZ;
+    }
+
+    /**
+     * Applies or removes vanilla chunk-force-loading (ServerLevel#setChunkForced, the same
+     * mechanism behind the vanilla /forceload command) for every chunk a claim spans.
+     */
+    public static void applyForceLoad(ServerLevel level, Claim claim, boolean forced) {
+        if (level == null || claim == null) return;
+        int minCx = claim.getMinX() >> 4, maxCx = claim.getMaxX() >> 4;
+        int minCz = claim.getMinZ() >> 4, maxCz = claim.getMaxZ() >> 4;
+        for (int cx = minCx; cx <= maxCx; cx++) {
+            for (int cz = minCz; cz <= maxCz; cz++) {
+                level.setChunkForced(cx, cz, forced);
+            }
+        }
+    }
+
+    /**
+     * Re-applies force-loading for every force-loaded claim on server start, resolving each
+     * claim's own dimension rather than assuming the overworld (a claim can exist in the
+     * Nether or End too). Vanilla already persists forced chunks on its own, but this keeps
+     * our per-claim bookkeeping and the world's actual forced-chunk set guaranteed to agree
+     * after a claim is created/edited/deleted or the save file is hand-edited.
+     */
+    public static synchronized void reapplyForceLoading(MinecraftServer server) {
+        for (Claim c : CLAIMS.values()) {
+            if (!c.isForceLoaded()) continue;
+            Identifier id = Identifier.tryParse(c.getDimension());
+            if (id == null) continue;
+            ServerLevel level = server.getLevel(ResourceKey.create(Registries.DIMENSION, id));
+            if (level != null) {
+                applyForceLoad(level, c, true);
+            }
+        }
     }
 }

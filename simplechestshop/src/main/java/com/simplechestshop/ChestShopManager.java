@@ -10,8 +10,6 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.Container;
-import net.minecraft.world.InteractionHand;
-import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.ContainerUser;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
@@ -131,9 +129,12 @@ public class ChestShopManager {
                 player.sendSystemMessage(Component.literal("§a[Chest Shop] Shop registered! You are now the owner of this shop."));
                 serverLevel.playSound(null, pos, SoundEvents.PLAYER_LEVELUP, SoundSource.BLOCKS, 0.75f, 1.2f);
             }
-        } else {
-            if (record != null && player != null && player.getUUID().toString().equals(record.ownerUuid)) {
-                ChestShopData.remove(serverLevel, pos);
+        } else if (record != null) {
+            // Unregister as soon as the paper is gone, regardless of who closed the chest.
+            // isProtectedShop() already treats a trade-less chest as unprotected, so leaving
+            // the record behind only creates a stale "ghost" shop with no real benefit.
+            ChestShopData.remove(serverLevel, pos);
+            if (player != null) {
                 player.sendSystemMessage(Component.literal("§e[Chest Shop] Shop unregistered. Chest is now a regular chest."));
             }
         }
@@ -228,94 +229,6 @@ public class ChestShopManager {
     public static void showShopInfo(Player player, ShopTrade trade, Container container, String ownerName) {
         if (trade == null) return;
         showShopInfo(player, java.util.List.of(trade), container, ownerName);
-    }
-
-    /**
-     * Executes a purchase transaction when a buyer right-clicks the shop chest with payment.
-     */
-    public static InteractionResult tryPurchase(Player player, Level level, BlockPos pos, InteractionHand hand) {
-        if (level.isClientSide()) {
-            return InteractionResult.SUCCESS;
-        }
-
-        Container container = getChestContainer(level, pos);
-        if (container == null) {
-            return InteractionResult.PASS;
-        }
-
-        java.util.List<ShopTrade> trades = getAllShopTrades(level, pos);
-        if (trades.isEmpty()) {
-            return InteractionResult.PASS;
-        }
-
-        ItemStack held = player.getItemInHand(hand);
-        ShopTrade matchedTrade = null;
-        for (ShopTrade t : trades) {
-            if (t.matchesPayment(held)) {
-                matchedTrade = t;
-                break;
-            }
-        }
-
-        ChestShopData.ShopRecord record = ChestShopData.getRecord(pos);
-        String ownerName = record != null ? record.ownerName : "Unknown";
-
-        // If player is NOT holding matching payment for any trade, show shop info and return
-        if (matchedTrade == null) {
-            showShopInfo(player, trades, container, ownerName);
-            return InteractionResult.SUCCESS;
-        }
-
-        ShopTrade trade = matchedTrade;
-        int stock = getStockCount(container, trade);
-        int requiredSaleCount = trade.getSaleCount();
-
-        if (stock < requiredSaleCount) {
-            player.sendSystemMessage(Component.literal("§c[Chest Shop] This trade is currently out of stock!"));
-            level.playSound(null, pos, SoundEvents.VILLAGER_NO, SoundSource.BLOCKS, 1.0f, 1.0f);
-            return InteractionResult.SUCCESS;
-        }
-
-        // Verify that chest has room to store the payment
-        ItemStack paymentStack = new ItemStack(trade.getPriceItem(), trade.getPriceCount());
-        if (!canStoreItem(container, paymentStack)) {
-            player.sendSystemMessage(Component.literal("§c[Chest Shop] Shop chest is full and cannot accept more payments!"));
-            return InteractionResult.SUCCESS;
-        }
-
-        Item toGiveItem = getActualSaleItem(container, trade);
-        if (toGiveItem == null) {
-            player.sendSystemMessage(Component.literal("§c[Chest Shop] Shop is out of stock!"));
-            return InteractionResult.SUCCESS;
-        }
-
-        // 1. Remove sale items from chest
-        removeSaleItems(container, toGiveItem, requiredSaleCount);
-
-        // 2. Deposit payment into chest
-        storeItem(container, paymentStack);
-
-        // 3. Deduct payment from player hand
-        held.shrink(trade.getPriceCount());
-
-        // 4. Give purchased items to buyer
-        ItemStack boughtStack = new ItemStack(toGiveItem, requiredSaleCount);
-        if (!player.getInventory().add(boughtStack)) {
-            player.drop(boughtStack, false, net.minecraft.util.Prediction.SERVER_ONLY);
-        }
-
-        container.setChanged();
-
-        // Audio & Visual feedback
-        level.playSound(null, pos, SoundEvents.NOTE_BLOCK_CHIME.value(), SoundSource.BLOCKS, 1.0f, 1.5f);
-        Component successMsg = Component.literal("§a✔ Purchased " + requiredSaleCount + "x ")
-                .append(getItemComponent(toGiveItem).copy().withStyle(net.minecraft.ChatFormatting.GREEN))
-                .append(Component.literal("§a for " + trade.getPriceCount() + "x "))
-                .append(getItemComponent(trade.getPriceItem()).copy().withStyle(net.minecraft.ChatFormatting.AQUA))
-                .append(Component.literal("§a!"));
-        player.sendSystemMessage(successMsg);
-
-        return InteractionResult.SUCCESS;
     }
 
     public static boolean canStoreItem(Container container, ItemStack stackToAdd) {
@@ -414,6 +327,19 @@ public class ChestShopManager {
         }
         container.setChanged();
         return remaining <= 0;
+    }
+
+    // Only real server operators bypass shop protection. Creative mode is just a gamemode
+    // setting - any regular player can end up in it (a build server default, a reward
+    // plugin, a misconfigured default gamemode), so treating it as "is admin" would let
+    // them break/loot anyone's shop chest for free. Op status is the only thing that
+    // actually means "this account is trusted by the server owner."
+    public static boolean isOp(Player player) {
+        if (player == null) return false;
+        if (player.level() != null && player.level().getServer() != null) {
+            return player.level().getServer().getPlayerList().isOp(player.nameAndId());
+        }
+        return false;
     }
 
     public static Component getItemComponent(Item item) {

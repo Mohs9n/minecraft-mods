@@ -9,7 +9,9 @@
     "ExplosionDamageCalculatorMixin",
     "LevelMixin",
     "ChestBlockEntityMixin",
-    "RandomizableContainerBlockEntityMixin"
+    "RandomizableContainerBlockEntityMixin",
+    "PistonBaseBlockMixin",
+    "MinecartHopperMixin"
   ],
   "client": [
   ],

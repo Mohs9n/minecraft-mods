@@ -121,16 +121,49 @@ Minecraft 26.3 introduces several naming and structural changes compared to 1.20
 com.simpleclaims
 ├── SimpleClaimsMod.java              # Mod entrypoint & event listeners
 ├── Claim.java                        # Model representing an owned 2D box (all Y levels)
-├── ClaimManager.java                 # In-memory index, permissions, wand tracking, borders
+├── ClaimManager.java                 # Chunk-indexed registry, permissions, wand tracking, borders
 ├── ClaimStorage.java                 # Persistent JSON claims storage (world/simple_claims.json)
 ├── command/
-│   └── ClaimCommands.java            # /claim wand, pos1, pos2, create, trust, untrust, list
+│   └── ClaimCommands.java            # /claim wand, pos1, pos2, create, trust, untrust, list, gui
+├── gui/
+│   ├── ClaimListMenu.java            # /claim gui: lists the player's own claims
+│   └── ClaimDetailMenu.java          # Per-claim info, trust management, armed delete-confirm
 └── mixin/
     ├── ServerExplosionMixin.java     # Strips claims from explosion blocks and fire
     ├── ExplosionDamageCalculatorMixin.java # Bedrock-grade resistance at claim borders
     ├── EnderDragonMixin.java         # Redirects dragon checkWalls removeBlock in claims
-    └── WitherBossMixin.java          # Redirects wither customServerAiStep destroyBlock in claims
+    ├── WitherBossMixin.java          # Redirects wither customServerAiStep destroyBlock in claims
+    └── PistonBaseBlockMixin.java     # Cancels push/pull through a claim border
 ```
+
+### Ideas Adopted from FTB Chunks
+After researching FTB Chunks (a well-known chunk-claiming + force-loading mod), three of
+its core ideas were ported in:
+- **Per-player claim limits** (`ClaimManager.MAX_CLAIMS_PER_PLAYER` / `MAX_TOTAL_CLAIM_AREA_PER_PLAYER`,
+  checked in `ClaimCommands.createClaimInternal`) - stops one player from claiming the whole
+  map. Ops are exempt.
+- **Explicit admin bypass toggle** (`/claim adminbypass`, `ClaimManager.isAdminBypassActive`)
+  - mirrors FTB Chunks' `bypass_protection` command. An op no longer silently ignores claim
+  protection just by having op status (that caused accidental grief while just playing
+  normally); they must deliberately toggle it on, and it resets on disconnect.
+- **Chunk force-loading** (`/claim forceload`, or the toggle button in the claim management
+  GUI) - keeps a claim's chunks ticking via vanilla's own `ServerLevel#setChunkForced` (the
+  same mechanism behind `/forceload`) even while the owner is offline, capped per-player by
+  `ClaimManager.MAX_FORCELOADED_CHUNKS_PER_PLAYER` to protect server performance.
+
+Not adopted: FTB Chunks' map/minimap and FTB Teams integration are out of scope for this
+mod - our existing per-claim trust list already covers multi-player sharing.
+
+### Performance & Hardening Notes
+- `ClaimManager` keeps a per-dimension chunk-bucket index (`chunkKey = (chunkX << 32) | chunkZ`)
+  so `getClaimAt`/`findOverlappingClaim` only scan claims touching the relevant chunk(s)
+  instead of every claim on the server. The index is rebuilt on `load()` and kept in sync on
+  every `addClaim`/`removeClaim`.
+- `ClaimStorage.save()` writes to a `.tmp` file and atomically renames it over
+  `simple_claims.json`, so a server crash mid-write can never corrupt the save file.
+- The claim wand (`isClaimWand`) requires an **exact** match on both custom name and lore
+  (`ClaimManager.WAND_NAME` / `WAND_LORE`), not a name substring. An anvil can only rewrite
+  `CUSTOM_NAME`, not `LORE`, so renaming an arbitrary golden hoe can never forge wand powers.
 
 ---
 
@@ -140,8 +173,17 @@ com.simpleclaims
    - `ExplosionDamageCalculatorMixin` returns `Optional.of(3600000.0F)` (Bedrock blast resistance) and `shouldBlockExplode = false`.
    - `ServerExplosionMixin` removes any position within claims from `interactWithBlocks` and `createFire`.
 2. **Boss Protection**:
-   - `EnderDragonMixin` redirects `checkWalls` call to `level.removeBlock`, skipping claim blocks. (Crucial: Never inject cancellation directly into `Level.removeBlock`, as vanilla `ServerPlayerGameMode.destroyBlock` calls `Level.removeBlock(pos, false)` for ALL player block mining!).
-   - `WitherBossMixin` redirects `customServerAiStep` call to `level.destroyBlock`, skipping claim blocks.
+   - `EnderDragonMixin` redirects `checkWalls`'s call to `level.removeBlock`, skipping claim
+     blocks. (Crucial: never inject cancellation directly into `Level.removeBlock`, since
+     vanilla `ServerPlayerGameMode.destroyBlock` calls `Level.removeBlock(pos, false)` for
+     ALL player block mining - cancelling it unconditionally would silently stop owners from
+     ever actually breaking blocks inside their own claim.)
+   - `WitherBossMixin` redirects `customServerAiStep`'s call to `level.destroyBlock`,
+     skipping claim blocks.
+2b. **Piston Protection**:
+   - `PistonBaseBlockMixin` cancels `PistonBaseBlock.moveBlocks` (both extend and sticky
+     retract) if any block along the push/pull path sits inside a claim, so claimed builds
+     can't be disassembled block-by-block by a piston staged just outside the border.
 3. **Player Anti-Grief**:
    - `AttackBlockCallback` & `PlayerBlockBreakEvents.BEFORE` prevent block mining by non-members.
    - `UseBlockCallback` prevents block placing, bucket emptying, and container/door/button interactions.
@@ -152,6 +194,47 @@ com.simpleclaims
    - Members gain immediate full build, break, container, and redstone rights within the claim.
 
 ---
+
+## 🏪 Simple Chest Shop Architecture
+
+```
+com.simplechestshop
+├── SimpleChestShopMod.java           # Mod entrypoint & event listeners
+├── ChestShopData.java                # Persistent ownership + trusted co-manager registry
+├── ChestShopManager.java             # Trade lookup, stock/transaction helpers, item name fallback
+├── ShopTrade.java                    # Immutable single price/sale pair
+├── ShopParser.java                   # Parses paper/name-tag custom names into ShopTrades
+├── command/
+│   └── ShopCommands.java             # /shopcreate, /shop create|help|trust|untrust|trusted
+├── gui/
+│   ├── ShopCreationMenu.java         # Visual shop-paper creator
+│   └── ShopBuyMenu.java              # Graphical buy menu (single + shift-click bulk buy)
+└── mixin/
+    ├── RandomizableContainerBlockEntityMixin.java # Instant registration on setItem
+    ├── ChestBlockEntityMixin.java    # Auto-unregister on stopOpen when trades go empty
+    ├── HopperBlockEntityMixin.java   # Blocks hoppers from sucking/ejecting on shop chests
+    ├── ServerExplosionMixin.java     # Strips shop chests from explosion blocks and fire
+    ├── ExplosionDamageCalculatorMixin.java # Bedrock-grade resistance for shop chest blocks
+    ├── LevelMixin.java               # Cancels Wither destroyBlock & Dragon removeBlock
+    └── PistonBaseBlockMixin.java     # Cancels push/pull of a registered shop chest
+```
+
+### Co-Owner / Trust System
+- `ChestShopData.ShopRecord` carries a `trusted` map (UUID -> name) alongside the owner.
+- `/shop trust <player>` / `/shop untrust <player>` raycast along the executor's exact view
+  (`Level#clip(ClipContext)`) to find the shop chest they're looking at within 6 blocks.
+- Trusted co-managers get the same raw-chest restock/preview access as the owner
+  (`ChestShopData.canManage`), but breaking the chest is still owner-only.
+
+### Bulk Buying
+- `ShopBuyMenu`: a normal left-click on `[ CLICK TO BUY ]` buys one batch; shift-click runs
+  `handleBulkPurchase`, which repeats the exact same single-batch transaction up to 64 times
+  (stopping as soon as stock, balance, or chest storage space runs out) and reports one
+  combined summary instead of spamming a message per batch.
+
+### Persistence Hardening
+- `ChestShopData.save()` writes to a `.tmp` file and atomically renames it over
+  `chest_shops.json`, matching `ClaimStorage`'s crash-safety approach.
 
 ## 🧪 Testing Best Practices
 

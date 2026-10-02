@@ -18,6 +18,11 @@ A lightweight, server-friendly Chest Shop mod for **Fabric Minecraft 26.3** ("Wi
   - 🔒 **Player Break Protection**: Non-owners cannot break the chest in survival mode.
   - 🛑 **Chest GUI Lock**: Non-owners cannot open the raw chest inventory to steal contents or money; right-clicking opens the graphical Buy Menu instead.
   - 🚫 **Hopper Anti-Theft**: Hoppers and hopper minecarts cannot extract items from or inject junk into active shop chests.
+  - 🧲 **Piston-Proof**: Pistons cannot push or pull a registered shop chest, so it can't be relocated to sidestep the protections above.
+- **Shop Co-Management (`/shop trust`)**:
+  - Owners can share management of a shop with friends via `/shop trust <player>` (look at the chest first).
+  - Trusted co-managers get the same restock/preview access as the owner, but only the real owner can break the chest or grant/revoke trust.
+  - `/shop trusted` lists who currently manages the shop you're looking at.
 - **Multiple Alternative Prices (Multi-Currency)**:
   - Sell the same product for multiple different currencies/prices!
   - Example: `1 diamond or 10 iron_ingot -> 64 cooked_beef`
@@ -63,8 +68,8 @@ A lightweight, server-friendly Chest Shop mod for **Fabric Minecraft 26.3** ("Wi
 
 ### 2. Buying from a Shop
 1. **To view info**: Left-click (punch) the chest with an empty hand.
-2. **To buy via GUI**: Right-click the chest with an empty hand to open the visual Buy Menu. Click the green **[ CLICK TO BUY ]** button on your preferred price row!
-3. **To buy via quick-click**: Right-click the chest while holding the exact payment (e.g. 1 Diamond or 10 Iron Ingot).
+2. **To buy via GUI**: Right-click the chest to open the visual Buy Menu. Left-click the green **[ CLICK TO BUY ]** button to buy one batch.
+3. **To buy in bulk**: Shift+left-click the **[ CLICK TO BUY ]** button to instantly buy as many batches as your balance, the chest's stock, and your inventory space allow.
 
 ---
 

@@ -18,6 +18,7 @@ public class Claim {
     private String ownerName;
     private Map<String, String> members; // UUID string -> Player Name
     private long createdAt;
+    private boolean forceLoaded; // keep ticking via ServerLevel#setChunkForced even when offline
 
     public Claim() {
         this.members = new HashMap<>();
@@ -90,6 +91,14 @@ public class Claim {
 
     public long getCreatedAt() {
         return createdAt;
+    }
+
+    public boolean isForceLoaded() {
+        return forceLoaded;
+    }
+
+    public void setForceLoaded(boolean forceLoaded) {
+        this.forceLoaded = forceLoaded;
     }
 
     public boolean contains(String dim, int x, int z) {

@@ -17,7 +17,7 @@ public class LevelMixin {
     private void protectShopChestFromDestroy(BlockPos pos, boolean dropResources, Entity entity, int recursionLimit, CallbackInfoReturnable<Boolean> cir) {
         Level level = (Level) (Object) this;
         if (ChestShopManager.isProtectedShop(level, pos)) {
-            if (entity instanceof Player player && player.isCreative()) {
+            if (entity instanceof Player player && ChestShopManager.isOp(player)) {
                 return;
             }
             cir.setReturnValue(false);
