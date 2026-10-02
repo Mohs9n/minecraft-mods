@@ -10,7 +10,8 @@
     "LevelMixin",
     "ChestBlockEntityMixin",
     "RandomizableContainerBlockEntityMixin",
-    "PistonBaseBlockMixin"
+    "PistonBaseBlockMixin",
+    "MinecartHopperMixin"
   ],
   "client": [
   ],

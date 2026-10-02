@@ -10,7 +10,10 @@
     "WitherBossMixin",
     "PistonBaseBlockMixin",
     "HopperBlockEntityMixin",
-    "FarmlandBlockMixin"
+    "FarmlandBlockMixin",
+    "FireBlockMixin",
+    "FlowingFluidMixin",
+    "MinecartHopperMixin"
   ],
   "client": [
   ],

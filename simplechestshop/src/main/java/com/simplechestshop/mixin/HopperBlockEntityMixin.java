@@ -3,8 +3,6 @@ package com.simplechestshop.mixin;
 import com.simplechestshop.ChestShopManager;
 import com.simplechestshop.ShopTrade;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
-import net.minecraft.world.Container;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
@@ -35,21 +33,8 @@ public abstract class HopperBlockEntityMixin {
         }
     }
 
-    /**
-     * Prevents hoppers from pushing items into shop chests.
-     */
-    @Inject(method = "ejectItems", at = @At("HEAD"), cancellable = true)
-    private static void simplechestshop$preventShopEject(Level level, BlockPos pos, HopperBlockEntity hopper, CallbackInfoReturnable<Boolean> cir) {
-        if (level == null || level.isClientSide()) return;
-
-        Direction facing = hopper.getBlockState().getValue(net.minecraft.world.level.block.HopperBlock.FACING);
-        BlockPos targetPos = pos.relative(facing);
-        BlockEntity be = level.getBlockEntity(targetPos);
-        if (be instanceof ChestBlockEntity) {
-            ShopTrade trade = ChestShopManager.getShopTrade(level, targetPos);
-            if (trade != null && trade.isValid()) {
-                cir.setReturnValue(false);
-            }
-        }
-    }
+    // Note: ejecting INTO a shop chest (restocking) is intentionally NOT blocked - that's
+    // just automated restocking, not theft, and blocking it meant even the shop's own
+    // owner couldn't feed their shop with a hopper sorting system. Only suckInItems
+    // (removing stock/payments) is anti-theft protected above.
 }
